@@ -71,11 +71,16 @@ class PauliTerm:
 
         self.words = [PauliWord(value, key) for key, value in element_sum.items() if value != 0]
         return
-    def to_matrix(self):
+    def to_matrix(self, mode):
         # Return sum(P)
-        matrix = self.words[0].to_pc().to_sparse()
-        for word in self.words[1:]:
-            matrix = matrix + word.to_pc().to_sparse()
+        if mode == 'csr':
+            matrix = self.words[0].to_pc().to_csr()
+            for word in self.words[1:]:
+                matrix = matrix + word.to_pc().to_csr()
+        else:
+            matrix = self.words[0].to_pc().to_coo()
+            for word in self.words[1:]:
+                matrix = matrix + word.to_pc().to_coo()
         return matrix
     def multiply(self, other):
         # Multiply two PauliTerms

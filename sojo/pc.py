@@ -90,7 +90,12 @@ class PauliComposer:
 
     def to_dict(self):
         return [(i, self.col[i], self.mat[i]) for i in range(self.dim)]
-    def to_sparse(self):
+    def to_coo(self):
+        self.row = np.arange(self.dim)
+        return ss.coo_matrix((self.mat, (self.row, self.col)),
+                             shape=(self.dim, self.dim))
+    
+    def to_csr(self):
         self.row = np.arange(self.dim)
         return ss.csr_matrix((self.mat, (self.row, self.col)),
                              shape=(self.dim, self.dim))
@@ -98,7 +103,7 @@ class PauliComposer:
     def to_matrix(self):
         return self.to_sparse().toarray()
     def add(self, pc2):
-        return self.to_sparse() + pc2.to_sparse()
+        self.to_sparse() + pc2.to_sparse()
 
 class PauliDiagComposer:
 
