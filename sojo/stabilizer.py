@@ -169,10 +169,10 @@ class StabilizerGenerator:
         for stab in self.stabilizers[1:]:
             density_matrix = density_matrix @ (np.eye(2**self.num_qubits) + stab.to_matrix_naive())
         return density_matrix*(1/(2**self.num_qubits))    
-    def generate_density_matrix_by_generator(self):
-        density_matrix = (sparse.csr_matrix(np.eye(2**self.num_qubits)) + self.stabilizers[0].to_matrix())
+    def generate_density_matrix_by_generator(self, mode):
+        density_matrix = (sparse.csr_matrix(np.eye(2**self.num_qubits)) + self.stabilizers[0].to_matrix(mode))
         for j in range(1, self.num_qubits):
-            density_matrix = density_matrix @ (sparse.csr_matrix(np.eye(2**self.num_qubits)) + self.stabilizers[j].to_matrix())
+            density_matrix = density_matrix @ (sparse.csr_matrix(np.eye(2**self.num_qubits)) + self.stabilizers[j].to_matrix(mode))
         return density_matrix*(1/(2**self.num_qubits))
     def generate_density_matrix(self):
         if len(self.ps) == 0:

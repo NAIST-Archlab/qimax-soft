@@ -101,9 +101,9 @@ class PauliComposer:
                              shape=(self.dim, self.dim))
 
     def to_matrix(self):
-        return self.to_sparse().toarray()
+        return self.to_csr().toarray()
     def add(self, pc2):
-        self.to_sparse() + pc2.to_sparse()
+        self.to_csr() + pc2.to_csr()
 
 class PauliDiagComposer:
 
@@ -111,7 +111,7 @@ class PauliDiagComposer:
         # Compute the number of dimensions for the given entry
         n = len(entry)
         self.n = n
-
+        self.row = None
         # Compute some helpful powers
         self.dim = 1<<n
 
@@ -143,9 +143,15 @@ class PauliDiagComposer:
 
         self.mat = mat
 
-    def to_sparse(self):
-        return ss.csr_matrix((self.mat, (np.arange(self.dim), np.arange(self.dim))),
+    def to_coo(self):
+        self.row = np.arange(self.dim)
+        return ss.coo_matrix((self.mat, (self.row, self.row)),
+                             shape=(self.dim, self.dim))
+    
+    def to_csr(self):
+        self.row = np.arange(self.dim)
+        return ss.csr_matrix((self.mat, (self.row, self.row)),
                              shape=(self.dim, self.dim))
 
     def to_matrix(self):
-        return self.to_sparse().toarray()
+        return self.to_csr().toarray()
