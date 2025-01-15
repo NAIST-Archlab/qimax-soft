@@ -44,52 +44,172 @@ class PauliWord:
     def __str__(self):
         return str(self.scalar) + '*' + self.word
 
-class PauliTerm:
-    def __init__(self, words):
-        self.words: list[PauliWord] = words
-        self.num_qubits = len(words[0].word)
-    def __str__(self):
-        return ' + '.join([str(word) for word in self.words])
-    def to_matrix_naive(self):
-        # Return sum(P)
-        matrix = np.zeros((2**(self.num_qubits), 2**(self.num_qubits)), dtype=complex)
-        for word in self.words:
-            matrix += word.to_matrix()
-        return matrix
-    def reduce(self):
-        # Example: P = [1*zxx, 1*yzi, 1j*zxx] -- reduce() --> [(1+1j)*zxx, 1*yzi]
-        # Example: P = [1*zxx, 1*yzi, -1*zxx] -- reduce() --> [1*yzi]
-        element_sum = {}
-        for pauli_word in self.words:
-            scalar, string = pauli_word.scalar, pauli_word.word
-            if np.abs(scalar) < 10**(-10):
-                scalar = 0
-            if string in element_sum:
-                element_sum[string] += scalar
-            else:
-                element_sum[string] = scalar
+# class PauliTerm:
+#     def __init__(self, words):
+#         self.words: list[PauliWord] = words
+#         self.num_qubits = len(words[0].word)
+#     def __str__(self):
+#         return ' + '.join([str(word) for word in self.words])
+#     def to_matrix_naive(self):
+#         # Return sum(P)
+#         matrix = np.zeros((2**(self.num_qubits), 2**(self.num_qubits)), dtype=complex)
+#         for word in self.words:
+#             matrix += word.to_matrix()
+#         return matrix
+#     def reduce(self):
+#         # Example: P = [1*zxx, 1*yzi, 1j*zxx] -- reduce() --> [(1+1j)*zxx, 1*yzi]
+#         # Example: P = [1*zxx, 1*yzi, -1*zxx] -- reduce() --> [1*yzi]
+#         element_sum = {}
+#         for pauli_word in self.words:
+#             scalar, string = pauli_word.scalar, pauli_word.word
+#             if np.abs(scalar) < 10**(-10):
+#                 scalar = 0
+#             if string in element_sum:
+#                 element_sum[string] += scalar
+#             else:
+#                 element_sum[string] = scalar
 
-        self.words = [PauliWord(value, key) for key, value in element_sum.items() if value != 0]
-        return
-    def to_matrix(self, mode):
-        # Return sum(P)
-        if mode == 'csr':
-            matrix = self.words[0].to_pc().to_csr()
-            for word in self.words[1:]:
-                matrix = matrix + word.to_pc().to_csr()
-        else:
-            matrix = self.words[0].to_pc().to_coo()
-            for word in self.words[1:]:
-                matrix = matrix + word.to_pc().to_coo()
-        return matrix
+#         self.words = [PauliWord(value, key) for key, value in element_sum.items() if value != 0]
+#         return
+#     def to_matrix(self, mode):
+#         # Return sum(P)
+#         if mode == 'csr':
+#             matrix = self.words[0].to_pc().to_csr()
+#             for word in self.words[1:]:
+#                 matrix = matrix + word.to_pc().to_csr()
+#         else:
+#             matrix = self.words[0].to_pc().to_coo()
+#             for word in self.words[1:]:
+#                 matrix = matrix + word.to_pc().to_coo()
+#         return matrix
+#     def multiply(self, other):
+#         # Multiply two PauliTerms
+#         new_terms = []
+#         for i in self.words:
+#             for j in other.words:
+#                 new_terms.append(i.multiply(j))
+#         return PauliTerm(new_terms)
+#     def map(self, gate, index, param):
+#         # Example: xii -- (h, 0) --> [z]ii
+#         # Example: xxx -- (t, 0) --> [x']xx = [1/sqrt(2) (x + y)]xx
+#         # Example: zxz -- (cx, [0,2]) --> [i]x[z]
+#         # This function will map a Pauli term to another Pauli term
+#         # Example: xii + xxx -- (h, 0) --> [z]ii + [z]xx
+#         # Two keys: only act on coressponding qubits, and independence between pauli strings
+#         num_words = len(self.words)
+#         for j in range(num_words):
+#             # Process on a single Pauli string
+            
+#             if gate == 'cx':
+#                 # Index will be [control, target]
+#                 # Word will be [word_control, word_target]
+#                 out_scalar, output_word = stabilizer_tabular(
+#                     self.words[j].get(index[0]) + self.words[j].get(index[1]), gate)
+#                 self.words[j].update(index[0], output_word[0])
+#                 self.words[j].update(index[1], output_word[1])
+#                 self.words[j].update_scalar(out_scalar)
+#             else:
+#                 # Index will be just a scalar
+#                 if gate in ['rx', 'ry', 'rz']:
+#                     out_scalar, output_word = stabilizer_tabular(
+#                         self.words[j].get(index), gate, param)
+#                 else:
+#                     out_scalar, output_word = stabilizer_tabular(
+#                         self.words[j].get(index), gate)
+#                 if type(output_word) == list:
+#                     self.words.append(self.words[j].duplicate())
+#                     self.words[j].update(index, output_word[0])
+#                     self.words[j].update_scalar(out_scalar[0])
+#                     self.words[-1].update(index, output_word[1])
+#                     self.words[-1].update_scalar(out_scalar[1])
+#                 else:
+#                     self.words[j].update(index, output_word)
+#                     self.words[j].update_scalar(out_scalar) 
+#         self.reduce()
+#         return
+
+
+from sojo.stabilizer import PauliWord
+from sojo.pc import PauliComposer
+from sojo.tabular import stabilizer_tabular
+import numpy as np
+import jax
+import jax.numpy as jnp
+
+class PauliTerm:
+    def __init__(self, words: dict[str, list[np.complex64]]):
+        self.words: dict[str, list[np.complex64]] = words
+        self.num_qubits = len(next(iter(words)))
+    def __str__(self):
+        return ' + '.join([str(np.round(v, 4)) + '*' + str(k) for k,v in self.words.items()])
+    def to_matrix_naive(self):
+        result = None
+        for word, scalar in self.words.items():
+            if result is None:
+                print(word, scalar)
+                result = PauliComposer(word, scalar[0]).to_matrix()
+            result = result + PauliComposer(word, scalar[0]).to_matrix()
+        return result
+    def to_matrix_with_i_naive(self):
+        result = np.eye(2**self.num_qubits)
+        for word, scalar in self.words.items():
+            result = result + PauliComposer(word, scalar[0]).to_matrix()
+        return result
+    def to_matrix_with_i_jax(self):
+        @jax.jit
+        def chain_sum(matrices):
+            while matrices.shape[0] > 1:
+                if matrices.shape[0] % 2 != 0:
+                    last_matrix = matrices[-1:]
+                    m1 = matrices[::2][:-1]
+                else:
+                    last_matrix = None
+                    m1 = matrices[::2]
+                m2 = matrices[1::2]
+                vectorized_multiply = jax.vmap(lambda a, b: a + b)
+                matrices = vectorized_multiply(m1, m2)
+                if last_matrix is not None:
+                    matrices = jnp.append(matrices, last_matrix, axis=0)
+            return matrices[0]
+        matrices = [PauliComposer(word, scalar[0]).to_csr() for word, scalar in self.words.items()]
+        from scipy.sparse import identity
+        matrices.append(identity(2**self.num_qubits, format='csr'))
+        return chain_sum(matrices)
+    @jax.jit
+    def to_matrix_jax(self):
+        matrices = [PauliComposer(word, scalar[0]).to_csr() for word, scalar in self.words.items()]
+        while matrices.shape[0] > 1:
+            if matrices.shape[0] % 2 != 0:
+                last_matrix = matrices[-1:]
+                m1 = matrices[::2][:-1]
+            else:
+                last_matrix = None
+                m1 = matrices[::2]
+            m2 = matrices[1::2]
+            vectorized_multiply = jax.vmap(lambda a, b: a + b)
+            matrices = vectorized_multiply(m1, m2)
+            if last_matrix is not None:
+                matrices = jnp.append(matrices, last_matrix, axis=0)
+        return matrices[0]
+    
     def multiply(self, other):
         # Multiply two PauliTerms
-        new_terms = []
-        for i in self.words:
-            for j in other.words:
-                new_terms.append(i.multiply(j))
+        def multiply_two_word(word1, scalar1, word2, scalar2):
+            # Multiply two PauliWords
+            word_temp = 'i' * len(word1)
+            scalar_temp = scalar1 * scalar2
+            for j, _ in enumerate(self.word):
+                scalar, character = pauli_tabular(word1[j], word2[j])
+                scalar_temp *= scalar
+                word_temp =  word_temp[:j] + character +  word_temp[j+1:]
+            return word_temp, scalar_temp
+        new_terms = {}
+        for word1, scalar1 in self.words.items():
+            for word2, scalar2 in other.words.items():
+                word_temp, scalar_temp = multiply_two_word(word1, scalar1[0], word2, scalar2[0])
+                new_terms[word_temp] = scalar_temp
         return PauliTerm(new_terms)
-    def map(self, gate, index, param):
+    def map(self, gate, index, param = 0):
         # Example: xii -- (h, 0) --> [z]ii
         # Example: xxx -- (t, 0) --> [x']xx = [1/sqrt(2) (x + y)]xx
         # Example: zxz -- (cx, [0,2]) --> [i]x[z]
@@ -97,43 +217,83 @@ class PauliTerm:
         # Example: xii + xxx -- (h, 0) --> [z]ii + [z]xx
         # Two keys: only act on coressponding qubits, and independence between pauli strings
         num_words = len(self.words)
-        for j in range(num_words):
+        count = 0
+        def update_word(word, index, character):
+            return word[:index] + character + word[index+1:]
+
+        for word_j, scalar_j in list(self.words.items()):
             # Process on a single Pauli string
+            if count > num_words:
+                break
+            count += 1
             
             if gate == 'cx':
                 # Index will be [control, target]
                 # Word will be [word_control, word_target]
                 out_scalar, output_word = stabilizer_tabular(
-                    self.words[j].get(index[0]) + self.words[j].get(index[1]), gate)
-                self.words[j].update(index[0], output_word[0])
-                self.words[j].update(index[1], output_word[1])
-                self.words[j].update_scalar(out_scalar)
+                    word_j[index[0]] + word_j[index[1]], gate)
+                # Replace word_j with output_word
+                # Example: xii -- (cx, [0,2]) --> [x]i[x]
+                new_word = update_word(word_j, index[0], output_word[0])
+                new_word = update_word(new_word, index[1], output_word[1])
+                # Don't forget +- 1 factor from cx
+                # If new_word is not in the dictionary, add it, and set [0] in the old word = 0
+                # If new_word is in the dictionary, update the scalar and append at [-1] in the existance one
+                # New_word = word_j in cnot mean there is no change, either scalar
+                if new_word == word_j:
+                    pass
+                else:
+                    if new_word in self.words:
+                        self.words[new_word].append(self.words[word_j][0] * out_scalar)
+                        self.words[word_j][0] = 0
+                    else:
+                        self.words[new_word] = [self.words[word_j][0] * out_scalar]
+                        self.words[word_j][0] = 0
+                # if abs(self.words[new_word]) < 10**(-10):
+                #     self.words.pop(new_word)
             else:
                 # Index will be just a scalar
                 if gate in ['rx', 'ry', 'rz']:
                     out_scalar, output_word = stabilizer_tabular(
-                        self.words[j].get(index), gate, param)
+                        word_j[index], gate, param)
                 else:
                     out_scalar, output_word = stabilizer_tabular(
-                        self.words[j].get(index), gate)
+                        word_j[index], gate)
                 if type(output_word) == list:
-                    self.words.append(self.words[j].duplicate())
-                    self.words[j].update(index, output_word[0])
-                    self.words[j].update_scalar(out_scalar[0])
-                    self.words[-1].update(index, output_word[1])
-                    self.words[-1].update_scalar(out_scalar[1])
+                    # One word turn to be two words, 
+                    # Only one index, 2 output words, 2 output scalars
+                    # I append new words to the end of the list
+                    # Example: xii -- (ry, 0) --> [x]ii + [z]ii
+                    new_word_0 = word_j
+                    new_word_1 = update_word(word_j, index, output_word[1])
+                    if new_word_1 in self.words:
+                        self.words[new_word_1].append(self.words[word_j][0] * out_scalar[1])
+
+                    else:
+                        self.words[new_word_1] = [self.words[word_j][0] * out_scalar[1]]
+                    self.words[word_j][0] *= out_scalar[0]
                 else:
-                    self.words[j].update(index, output_word)
-                    self.words[j].update_scalar(out_scalar) 
-        self.reduce()
+                    new_word = update_word(word_j, index, output_word)
+                    if new_word in self.words:
+                        self.words[new_word].append(self.words[word_j][0] * out_scalar)
+                        self.words[word_j][0] = 0
+                    else:
+                        self.words[new_word] = [self.words[word_j][0] * out_scalar]
+                        self.words[word_j][0] = 0
+        # Reduce
+        # Example: P = [1*zxx, 1*yzi, 1j*zxx] -- reduce() --> [(1+1j)*zxx, 1*yzi]
+        # Example: P = [1*zxx, 1*yzi, -1*zxx] -- reduce() --> [1*yzi]
+        self.words = {key: [s] for key, value in self.words.items() if abs(s := sum(value)) > 10**(-10)}
         return
+
+
 class StabilizerGenerator:
     def __init__(self, num_qubits):
         # Example: if the system is 3 qubits, then the stabilizer group will be {Z0, Z1, Z2}
         # or {zii, izi, iiz}
         self.num_qubits = num_qubits
-        init_words = ['i' * i + 'z' + 'i' * (num_qubits - i - 1) for i in range(num_qubits)]
-        init_stabilizers = [PauliTerm([PauliWord(1, word)]) for word in init_words]
+        init_words = ['i' * j + 'z' + 'i' * (num_qubits - j - 1) for j in range(num_qubits)]
+        init_stabilizers = [PauliTerm({word: [1]}) for word in init_words]
         self.stabilizers: list[PauliTerm] = init_stabilizers
         self.ps: list[PauliTerm] = []
     def __str__(self):
@@ -141,15 +301,12 @@ class StabilizerGenerator:
         for i in self.stabilizers[:-1]:
             string += str(i) + '\n'
         return string + str(self.stabilizers[-1]) + '>'
-    def reduce(self):
-        for i, _ in enumerate(self.stabilizers):
-            self.stabilizers[i].reduce()
-        return
+
     def map(self, gate: str, index, param = 0):
         for i, _ in enumerate(self.stabilizers):
             self.stabilizers[i].map(gate, index, param)
         return
-    def generate_p(self):
+    def generate_group(self):
         def get_subsets(n):
             from itertools import chain, combinations
             input_set = set(range(n))
@@ -159,27 +316,27 @@ class StabilizerGenerator:
         sets = get_subsets(len(self.stabilizers))
         self.ps = []
         for indices in sets:
-            p = PauliTerm([PauliWord(1, 'i'*self.num_qubits)])
+            p = PauliTerm({1, 'i'*self.num_qubits})
             for j in indices:
                 p = p.multiply(self.stabilizers[j])
             self.ps.append(p)
         return
     def generate_density_matrix_by_generator_naive(self):
-        density_matrix = (np.eye(2**self.num_qubits) + self.stabilizers[0].to_matrix_naive())
-        for stab in self.stabilizers[1:]:
-            density_matrix = density_matrix @ (np.eye(2**self.num_qubits) + stab.to_matrix_naive())
-        return density_matrix*(1/(2**self.num_qubits))    
-    def generate_density_matrix_by_generator(self, mode):
-        density_matrix = (sparse.csr_matrix(np.eye(2**self.num_qubits)) + self.stabilizers[0].to_matrix(mode))
+        density_matrix = self.stabilizers[0].to_matrix_with_i_naive()
         for j in range(1, self.num_qubits):
-            density_matrix = density_matrix @ (sparse.csr_matrix(np.eye(2**self.num_qubits)) + self.stabilizers[j].to_matrix(mode))
+            density_matrix = density_matrix @ self.stabilizers[j].to_matrix_with_i_naive()
+        return density_matrix*(1/(2**self.num_qubits))    
+    def generate_density_matrix_by_generator_jax(self):
+        density_matrix = self.stabilizers[0].to_matrix_with_i_jax()
+        for j in range(1, self.num_qubits):
+            density_matrix = density_matrix @ self.stabilizers[j].to_matrix_with_i_jax()
         return density_matrix*(1/(2**self.num_qubits))
-    def generate_density_matrix(self):
+    def generate_density_matrix_by_group_naive(self):
         if len(self.ps) == 0:
-            self.generate_p()
-        density_matrix = np.zeros((2**self.num_qubits, 2**self.num_qubits), dtype=complex)
-        for p in self.ps:
-            density_matrix += p.to_matrix_naive()
+            self.generate_group()
+        density_matrix = self.ps[0].to_matrix_naive()
+        for j in range(1, len(self.ps)):
+            density_matrix += self.ps[j].to_matrix_naive()
         return (1/2**self.num_qubits)*density_matrix
 StabilizerGenerator.h = lambda self, index: self.map('h', index)
 StabilizerGenerator.s = lambda self, index: self.map('s', index)

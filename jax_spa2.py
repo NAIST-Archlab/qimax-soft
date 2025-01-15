@@ -6,7 +6,7 @@ from jax import config
 config.update("jax_platform_name", "cpu")
 
 # Tạo 100 ma trận 100x100 ngẫu nhiên
-n_matrices = 40000  # Số lượng ma trận
+n_matrices = 8000  # Số lượng ma trận
 matrix_size = 20  # Kích thước mỗi ma trận
 
 key = jax.random.PRNGKey(0)
