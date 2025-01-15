@@ -87,7 +87,12 @@ class PauliComposer:
 
         self.col = col
         self.mat = ent
-
+    def get_value(self):
+        return self.mat
+    def get_row(self):
+        return np.arange(self.dim)
+    def get_col(self):
+        return self.col
     def to_dict(self):
         return [(i, self.col[i], self.mat[i]) for i in range(self.dim)]
     def to_coo(self):
@@ -142,12 +147,16 @@ class PauliDiagComposer:
                 mat[p:p2] = -mat[0:p]
 
         self.mat = mat
-
+    def get_value(self):
+        return self.mat
     def to_coo(self):
         self.row = np.arange(self.dim)
         return ss.coo_matrix((self.mat, (self.row, self.row)),
                              shape=(self.dim, self.dim))
-    
+    def get_row(self):
+        return np.arange(self.dim)
+    def get_col(self):
+        return np.arange(self.dim)
     def to_csr(self):
         self.row = np.arange(self.dim)
         return ss.csr_matrix((self.mat, (self.row, self.row)),
