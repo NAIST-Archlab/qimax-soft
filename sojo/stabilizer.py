@@ -155,43 +155,32 @@ class PauliTerm:
         for word, scalar in self.words.items():
             result = result + PauliComposer(word, scalar[0]).to_matrix()
         return result
-    def to_matrix_with_i_jax(self):
-        @jax.jit
-        def chain_sum(matrices):
-            while matrices.shape[0] > 1:
-                if matrices.shape[0] % 2 != 0:
-                    last_matrix = matrices[-1:]
-                    m1 = matrices[::2][:-1]
-                else:
-                    last_matrix = None
-                    m1 = matrices[::2]
-                m2 = matrices[1::2]
-                vectorized_multiply = jax.vmap(lambda a, b: a + b)
-                matrices = vectorized_multiply(m1, m2)
-                if last_matrix is not None:
-                    matrices = jnp.append(matrices, last_matrix, axis=0)
-            return matrices[0]
-        matrices = [PauliComposer(word, scalar[0]).to_csr() for word, scalar in self.words.items()]
-        from scipy.sparse import identity
-        matrices.append(identity(2**self.num_qubits, format='csr'))
-        return chain_sum(matrices)
-    @jax.jit
     def to_matrix_jax(self):
-        matrices = [PauliComposer(word, scalar[0]).to_csr() for word, scalar in self.words.items()]
-        while matrices.shape[0] > 1:
-            if matrices.shape[0] % 2 != 0:
-                last_matrix = matrices[-1:]
-                m1 = matrices[::2][:-1]
-            else:
-                last_matrix = None
-                m1 = matrices[::2]
-            m2 = matrices[1::2]
-            vectorized_multiply = jax.vmap(lambda a, b: a + b)
-            matrices = vectorized_multiply(m1, m2)
-            if last_matrix is not None:
-                matrices = jnp.append(matrices, last_matrix, axis=0)
-        return matrices[0]
-    
+        from sojo.pc import PauliComposer
+        import jax.numpy as jnp
+        import jax
+        from jax.experimental.sparse import BCOO
+        def zipped_list(rows, cols):
+            return [list(item) for item in zip(rows, cols)]
+
+        batch_indices = []
+        batch_values = []
+        for word, value in self.words.items():
+            pc = PauliComposer(word, value[0])
+            zip_list = zipped_list(pc.get_row(), pc.get_col())
+            batch_indices.append(zip_list)
+            batch_values.append(pc.get_value())
+        batch_indices = jnp.array(batch_indices)
+        batch_values = jnp.array(batch_values)
+        batch_sparse_matrix = BCOO((batch_values, batch_indices), shape = (len(self.words.items()),2**pc.n,2**pc.n))
+        jit_sum_bcoo: BCOO = jax.jit(lambda tensor: tensor.sum(axis=0))
+        return jit_sum_bcoo(batch_sparse_matrix).todense()
+    def to_matrix_with_i_jax(self):
+        self.words['i'*self.num_qubits] = [1]
+        result = self.to_matrix_jax()
+        self.words.pop('i'*self.num_qubits)
+        return result
+
     def multiply(self, other):
         # Multiply two PauliTerms
         def multiply_two_word(word1, scalar1, word2, scalar2):
