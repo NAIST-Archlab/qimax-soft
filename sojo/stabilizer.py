@@ -1,8 +1,12 @@
 from .tabular import pauli_tabular, stabilizer_tabular
 from .tp import kron_product
-import numpy as np
 from .pc import PauliComposer, PauliDiagComposer
-from scipy import sparse
+import concurrent.futures
+import jax.numpy as jnp
+import numpy as np
+import jax
+from jax.experimental.sparse import BCOO
+
 class PauliWord:
     # Example: 2*ixz
     def __init__(self, scalar, word: str):
@@ -129,13 +133,6 @@ class PauliWord:
 #         return
 
 
-from sojo.stabilizer import PauliWord
-from sojo.pc import PauliComposer
-from sojo.tabular import stabilizer_tabular
-import numpy as np
-import jax
-import jax.numpy as jnp
-
 class PauliTerm:
     def __init__(self, words: dict[str, list[np.complex64]]):
         self.words: dict[str, list[np.complex64]] = words
@@ -156,13 +153,12 @@ class PauliTerm:
             result = result + PauliComposer(word, scalar[0]).to_matrix()
         return result
     def to_matrix_jax(self):
-        from sojo.pc import PauliComposer
-        import jax.numpy as jnp
-        import jax
-        from jax.experimental.sparse import BCOO
+        
         def zipped_list(rows, cols):
             return [list(item) for item in zip(rows, cols)]
-
+        print("start to matrix")
+        import time
+        start = time.time()
         batch_indices = []
         batch_values = []
         for word, value in self.words.items():
@@ -174,6 +170,7 @@ class PauliTerm:
         batch_values = jnp.array(batch_values)
         batch_sparse_matrix = BCOO((batch_values, batch_indices), shape = (len(self.words.items()),2**pc.n,2**pc.n))
         jit_sum_bcoo: BCOO = jax.jit(lambda tensor: tensor.sum(axis=0))
+        print("end to matrix", time.time() - start)
         return jit_sum_bcoo(batch_sparse_matrix).todense()
     def to_matrix_with_i_jax(self):
         self.words['i'*self.num_qubits] = [1]
@@ -276,6 +273,86 @@ class PauliTerm:
         return
 
 
+def map_x(pc: PauliTerm, gate = 'rx', index = 0, param = 0):
+    # Example: xii -- (h, 0) --> [z]ii
+    # Example: xxx -- (t, 0) --> [x']xx = [1/sqrt(2) (x + y)]xx
+    # Example: zxz -- (cx, [0,2]) --> [i]x[z]
+    # This function will map a Pauli term to another Pauli term
+    # Example: xii + xxx -- (h, 0) --> [z]ii + [z]xx
+    # Two keys: only act on coressponding qubits, and independence between pauli strings
+    words = pc.words
+    num_words = len(words)
+    count = 0
+    def update_word(word, index, character):
+        return word[:index] + character + word[index+1:]
+
+    for word_j, scalar_j in list(words.items()):
+        # Process on a single Pauli string
+        if count > num_words:
+            break
+        count += 1
+        
+        if gate == 'cx':
+            # Index will be [control, target]
+            # Word will be [word_control, word_target]
+            out_scalar, output_word = stabilizer_tabular(
+                word_j[index[0]] + word_j[index[1]], gate)
+            # Replace word_j with output_word
+            # Example: xii -- (cx, [0,2]) --> [x]i[x]
+            new_word = update_word(word_j, index[0], output_word[0])
+            new_word = update_word(new_word, index[1], output_word[1])
+            # Don't forget +- 1 factor from cx
+            # If new_word is not in the dictionary, add it, and set [0] in the old word = 0
+            # If new_word is in the dictionary, update the scalar and append at [-1] in the existance one
+            # New_word = word_j in cnot mean there is no change, either scalar
+            if new_word == word_j:
+                pass
+            else:
+                if new_word in words:
+                    words[new_word].append(words[word_j][0] * out_scalar)
+                    words[word_j][0] = 0
+                else:
+                    words[new_word] = [words[word_j][0] * out_scalar]
+                    words[word_j][0] = 0
+            # if abs(self.words[new_word]) < 10**(-10):
+            #     self.words.pop(new_word)
+        else:
+            # Index will be just a scalar
+            if gate in ['rx', 'ry', 'rz']:
+                out_scalar, output_word = stabilizer_tabular(
+                    word_j[index], gate, param)
+            else:
+                out_scalar, output_word = stabilizer_tabular(
+                    word_j[index], gate)
+            if type(output_word) == list:
+                # One word turn to be two words, 
+                # Only one index, 2 output words, 2 output scalars
+                # I append new words to the end of the list
+                # Example: xii -- (ry, 0) --> [x]ii + [z]ii
+                new_word_0 = word_j
+                new_word_1 = update_word(word_j, index, output_word[1])
+                if new_word_1 in words:
+                    words[new_word_1].append(words[word_j][0] * out_scalar[1])
+
+                else:
+                    words[new_word_1] = [words[word_j][0] * out_scalar[1]]
+                words[word_j][0] *= out_scalar[0]
+            else:
+                new_word = update_word(word_j, index, output_word)
+                if new_word in words:
+                    words[new_word].append(words[word_j][0] * out_scalar)
+                    words[word_j][0] = 0
+                else:
+                    words[new_word] = [words[word_j][0] * out_scalar]
+                    words[word_j][0] = 0
+    # Reduce
+    # Example: P = [1*zxx, 1*yzi, 1j*zxx] -- reduce() --> [(1+1j)*zxx, 1*yzi]
+    # Example: P = [1*zxx, 1*yzi, -1*zxx] -- reduce() --> [1*yzi]
+    return PauliTerm({key: [s] for key, value in words.items() if abs(s := sum(value)) > 10**(-10)})
+
+
+
+
 class StabilizerGenerator:
     def __init__(self, num_qubits):
         # Example: if the system is 3 qubits, then the stabilizer group will be {Z0, Z1, Z2}
@@ -290,7 +367,17 @@ class StabilizerGenerator:
         for i in self.stabilizers[:-1]:
             string += str(i) + '\n'
         return string + str(self.stabilizers[-1]) + '>'
-
+    def map_parallel(self, gate: str, index, param = 0):
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            self.stabilizers = list(executor.map(map_x, self.stabilizers))
+        return
+    # def map_parallel(self, gate: str, index, param = 0):
+    #     with concurrent.futures.ProcessPoolExecutor() as executor:
+    #         self.stabilizers = list(executor.map(
+    #             lambda stabilizer: map_parallel(stabilizer, gate, index, param), 
+    #             self.stabilizers))
+    #     return
+    
     def map(self, gate: str, index, param = 0):
         for i, _ in enumerate(self.stabilizers):
             self.stabilizers[i].map(gate, index, param)

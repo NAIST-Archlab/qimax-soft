@@ -42,8 +42,8 @@ def wchain_xyz_qiskit(num_qubits, num_layers):
     return dm
 
 
-num_qubits = 6
-num_layers = 10
+num_qubits = 3
+num_layers = 10000
 
 start = time.time()
 dm_sojo = wchain_xyz_sojo(num_qubits, num_layers)
