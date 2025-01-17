@@ -38,12 +38,14 @@ def wchain_xyz_qiskit(num_qubits, num_layers):
             k += 3
 
     sv = qi.Statevector.from_instruction(qc).data
+    start = time.time()
     dm = np.outer(sv, sv.conj())
+    print(f"Outer: {time.time() - start}")
     return dm
 
 
 num_qubits = 3
-num_layers = 10000
+num_layers = 1000
 
 start = time.time()
 dm_sojo = wchain_xyz_sojo(num_qubits, num_layers)
