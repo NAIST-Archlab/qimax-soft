@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def pauli_tabular(a, b):
     if a == 'i':
         return 1, b
