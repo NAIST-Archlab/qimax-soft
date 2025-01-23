@@ -1,6 +1,6 @@
 import numpy as np
 from numpy import sin, cos, sqrt
-
+from .utils import index_to_word, char_to_weight
 
 class Instructor:
     """List of instructors
@@ -44,8 +44,8 @@ class Instructor:
                     if len(self.instructors) > 1:
                         if self.instructors[1][0] != "cx":
                             is_break = True
-
-                self.xcluster.append(self.instructors.pop(0))
+                _, index, _ = self.instructors.pop(0)
+                self.xcluster.append(index)
             else:
                 if self.barriers[index] == 0:
                     self.cluster.append(self.instructors.pop(0))
@@ -69,44 +69,6 @@ class Instructor:
         if len(self.xcluster) > 0:
             self.xclusters.append(self.xcluster)
         return
-
-
-def char_to_weight(character: str) -> np.ndarray:
-    """X -> [0, 1, 0, 0] = 0*I + 1*X + 0*Y + 0*Z
-
-    Args:
-        character (str): _description_
-
-    Returns:
-        np.ndarray: _description_
-    """
-    if character == "x":
-        return np.array([0, 1, 0, 0])
-    if character == "y":
-        return np.array([0, 0, 1, 0])
-    if character == "z":
-        return np.array([0, 0, 0, 1])
-    if character == "i":
-        return np.array([1, 0, 0, 0])
-
-
-def char_to_index(character: str) -> int:
-    """I,X,Y,Z -> 0,1,2,3
-
-    Args:
-        character (str): _description_
-
-    Returns:
-        int: _description_
-    """
-    if character == "i":
-        return 0
-    if character == "x":
-        return 1
-    if character == "y":
-        return 2
-    if character == "z":
-        return 3
 
 
 def group_instructorss_by_qubits(instructors: list, num_qubits: int) -> list:
@@ -167,33 +129,10 @@ def mapper_noncx(character: str, instructors: list) -> np.ndarray:
 
 
 
-def index_to_word(index: int, num_qubits: int) -> str:
-    """Convert a index to coressponding word
-    Example: index 4, 2 (qubits) -> IX
-    Example: index 255, 4 (qubits) -> ZZZZ
-    Args:
-        index (int): An integer from 0 to 4**num_qubits - 1
-        num_qubits (int)
-
-    Raises:
-        ValueError: index out of bounds
-
-    Returns:
-        str: word
-    """
-    char_map = ['i', 'x', 'y', 'z']
-    word = []
-    if index < 0 or index >= 4**num_qubits:
-        raise ValueError('Index out of bounds. must from 0 to 4**num_qubits - 1')
-    for _ in range(num_qubits):
-        word.append(char_map[index % 4])
-        index //= 4
-    return ''.join(reversed(word))
-
 def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     """grouped_instructorss has size k x n x [?], with k is number of non-cx layer, n is number of qubits,
     ? is the number of instructor (depend on each cluster).
-    lut has size k x n x 4 x 4, with 4 is the number of Pauli, 4 for weights
+    lut has size k x n x 3 x 4, with 3 is the number of Pauli (ignore I), 4 for weights
     Args:
         grouped_instructorss (_type_): group by qubits
         num_qubits (int): _description_
@@ -202,12 +141,12 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
         _type_: _description_
     """
     k = len(grouped_instructorss)
-    lut = np.zeros((k, num_qubits, 4, 4))
+    lut = np.zeros((k, num_qubits, 3, 4))
     print(lut.shape)
-    characters = ["i", "x", "y", "z"]
+    characters = ["x", "y", "z"] # Ignore I because [?]I = I
     for k in range(k):
         for j in range(num_qubits):
-            for i in range(4):
+            for i in range(3):
                 lut[k][j][i] = mapper_noncx(characters[i], grouped_instructorss[k][j])
     return lut
 
@@ -218,40 +157,11 @@ def instructor_to_lut(ins: Instructor):
     LUT = construct_lut_noncx(grouped_instructorss, ins.num_qubits)
     return LUT
 
-def word_to_index(word: str) -> int:
-    """Convert word to corresponding index in array of 4^n
-    Example: IX -> 1*4^1 + 0*4^0 = 4
-    Example: IIII -> 0, ZZZZ = 4^4 - 1 = 255
-    Args:
-        word (str): Pauliword
-
-    Returns:
-        int: index
-    """
-    index = 0
-    for char in word:
-        index = index * 4 + char_to_index(char)
-    return index
-
-def generate_pauli_combination(num_qubits: int) -> np.ndarray:
-    """Generater 4^num_qubits Pauli combinations 
-    for a given number of qubits.
-    Args:
-        num_qubits (int): _description_
-
-    Returns:
-        np.ndarray: _description_
-    """
-    combinations = []
-    for i in range(0, 4**num_qubits):
-        combinations.append(index_to_word(i, num_qubits	))
-    return combinations
-
-def weightss_to_lambda(weightss: np.ndarray, lambdas = None) -> np.ndarray:
+def weightss_to_lambda(weightss: np.ndarray, lambdas) -> np.ndarray:
     """A sum of transformed word (a matrix 4^n x n x 4) to list
     Example for a single transformed word (treated as 1 term): 
-        [[1,2,3,4], [1,2,3,4]] 
-            -> [1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12, 4, 8, 12, 16]
+        k*[[1,2,3,4], [1,2,3,4]] 
+            -> k*[1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12, 4, 8, 12, 16]
     Example for this function (sum, 2 qubits, 3 term):
         [[[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]]] 
             -> [ 3.  6.  9. 12.  6. 12. 18. 24.  9. 18. 27. 36. 12. 24. 36. 48.]
@@ -259,13 +169,14 @@ def weightss_to_lambda(weightss: np.ndarray, lambdas = None) -> np.ndarray:
         weightss (np.ndarray): _description_
 
     Returns:
-        np.ndarray: _description_
+        np.ndarray: lambdas
     """
-    if lambdas is None:
-        lambdas = np.ones(weightss.shape[0])
     num_qubits = weightss.shape[1]
     new_lambdas = np.zeros((4**num_qubits))
     for j, weights in enumerate(weightss):
         combinations = np.array(np.meshgrid(*weights)).T.reshape(-1, len(weights))
         new_lambdas += lambdas[j]*np.prod(combinations, axis=1)
+    # This lambdas is still in the form of 4^n x 1, 
+    # we need to ignore 0 values in the next steps
+    # In the worst case, there is no 0 values.
     return new_lambdas
