@@ -90,3 +90,37 @@ def generate_pauli_combination(num_qubits: int) -> np.ndarray:
     for i in range(0, 4**num_qubits):
         combinations.append(index_to_word(i, num_qubits	))
     return combinations
+
+def create_word_zj(j, num_qubits):
+    if j < 0 or j >= num_qubits:
+        raise ValueError('j out of bounds. must from 0 to num_qubits - 1')
+    return "i" * j + "z" + "i" * (num_qubits - j - 1)
+
+def create_zip_chain(num_operators, num_xoperators, is_cx_first):
+    """Create list 0,1,0,1,...
+    If is_cx_first is True, then 1 is first, else 0 is first
+    Args:
+        n (_type_): _description_
+        m (_type_): _description_
+        is_cx_first (bool): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    result = []
+    while num_operators > 0 or num_xoperators > 0:
+        if is_cx_first:
+            if num_xoperators > 0:
+                result.append(1)
+                num_xoperators -= 1
+            if num_operators > 0:
+                result.append(0)
+                num_operators -= 1
+        else:   
+            if num_operators > 0:
+                result.append(0)
+                num_operators -= 1
+            if num_xoperators > 0:
+                result.append(1)
+                num_xoperators -= 1
+    return result
