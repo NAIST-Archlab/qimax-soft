@@ -6,8 +6,6 @@ import qiskit
 import qiskit.quantum_info as qi
 import time
 
-num_qubits = 3
-num_layers = 1000
 
 
 times_lut = []
@@ -85,7 +83,8 @@ def benchmark(num_qubits, num_layers, avg_times):
     np.savetxt(f"./data/times_mp_{num_qubits}qubit_{num_layers}layer.csv", times_mp, delimiter=",")
     np.savetxt(f"./data/times_qiskit_{num_qubits}qubit_{num_layers}layer.csv", times_qiskit, delimiter=",")
 
-avg_times = 3
-for num_qubits in [2,3,4]:
-    for num_layers in [10, 100, 1000]:
+avg_times = 10
+qubits = range(2, 8)
+for num_qubits in qubits:
+    for num_layers in [10, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]:
         benchmark(num_qubits, num_layers, avg_times)
