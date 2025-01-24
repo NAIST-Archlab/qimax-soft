@@ -60,7 +60,7 @@ def map_noncx(indices: np.ndarray, lambdas: np.ndarray, LUT, k: int, num_qubits:
             else: 
                 weights.append(LUT[k][j][i_in_lut])
         weightss.append(weights)
-    # Weightss's now a 4-d tensor
+    # Weightss's now a 4-d tensor, 4^n x n x 4
     weightss = np.array(weightss)
     # Flattening the weightss into new lambdas, => Can be process effeciently on hardware
     lambdas = weightss_to_lambda(weightss, lambdas)

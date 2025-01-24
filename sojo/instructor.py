@@ -149,7 +149,6 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     """
     k = len(grouped_instructorss)
     lut = np.zeros((k, num_qubits, 3, 4))
-    print(lut.shape)
     characters = ["x", "y", "z"] # Ignore I because [?]I = I
     for k in range(k):
         for j in range(num_qubits):
