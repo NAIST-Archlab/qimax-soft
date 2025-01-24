@@ -179,11 +179,6 @@ class PauliTerm:
 
         def zipped_list(rows, cols):
             return [list(item) for item in zip(rows, cols)]
-
-        print("start to matrix")
-        import time
-
-        start = time.time()
         batch_indices = []
         batch_values = []
         for word, value in self.words.items():
@@ -197,8 +192,7 @@ class PauliTerm:
             (batch_values, batch_indices),
             shape=(len(self.words.items()), 2**pc.n, 2**pc.n),
         )
-        jit_sum_bcoo: BCOO = jax.jit(lambda tensor: tensor.sum(axis=0))
-        print("end to matrix", time.time() - start)
+        jit_sum_bcoo = jax.jit(lambda tensor: tensor.sum(axis=0))
         return jit_sum_bcoo(batch_sparse_matrix).todense()
 
     def to_matrix_with_i_jax(self):

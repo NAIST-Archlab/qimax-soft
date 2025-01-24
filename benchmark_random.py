@@ -30,7 +30,7 @@ for gate in gates:
         stb.rz(angle, index)
 start = time.time()
 dm = stb.generate_density_matrix_by_generator_jax()
-print(time.time() - start)
+print("Generate matrix", time.time() - start)
 
 start = time.time()
 qc = qiskit.QuantumCircuit(num_qubits)
