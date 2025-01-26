@@ -180,7 +180,7 @@ def weightss_to_lambda(weightss: np.ndarray, lambdas) -> np.ndarray:
     num_qubits = weightss.shape[1]
     new_lambdas = np.zeros((4**num_qubits))
     for j, weights in enumerate(weightss):
-        combinations = np.array(np.meshgrid(*weights)).T.reshape(-1, len(weights))
+        combinations = np.stack(np.meshgrid(*weights, indexing='ij'), axis=-1).reshape(-1, len(weights))
         new_lambdas += lambdas[j]*np.prod(combinations, axis=1)
     # This lambdas is still in the form of 4^n x 1, 
     # we need to ignore 0 values in the next steps
