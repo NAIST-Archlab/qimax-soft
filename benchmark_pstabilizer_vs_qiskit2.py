@@ -8,12 +8,13 @@ import time
 
 
 
-times_lut = []
-times_mapping = []
-times_mp = []
-times_qiskit = []
+
 num_layers = 50
 def benchmark(num_qubits, num_repeat, avg_times):
+    times_lut = []
+    times_mapping = []
+    times_mp = []
+    times_qiskit = []
     for _ in range(avg_times):
         ############################
         ##### -Create LUT -- #####
