@@ -147,10 +147,10 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     Returns:
         _type_: _description_
     """
-    k = len(grouped_instructorss)
-    lut = np.zeros((k, num_qubits, 3, 4))
+    K = len(grouped_instructorss)
+    lut = np.zeros((K, num_qubits, 3, 4))
     characters = ["x", "y", "z"] # Ignore I because [?]I = I
-    for k in range(k):
+    for k in range(K):
         for j in range(num_qubits):
             for i in range(3):
                 lut[k][j][i] = mapper_noncx(characters[i], grouped_instructorss[k][j])
