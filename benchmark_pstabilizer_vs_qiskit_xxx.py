@@ -6,8 +6,8 @@ import qiskit
 import qiskit.quantum_info as qi
 import time
 
-num_qubits = 3
-num_layers = 1000
+num_qubits = 8
+num_layers = 3
 avg_times = 10
 
 times_lut = []
