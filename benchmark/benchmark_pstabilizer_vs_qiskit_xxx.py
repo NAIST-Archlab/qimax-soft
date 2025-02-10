@@ -1,6 +1,6 @@
-from sojo.pstabilizer import PStabilizer
-from sojo.instructor import Instructor
-from sojo.stabilizer import StabilizerGenerator
+from qimax.pstabilizer import PStabilizer
+from qimax.instructor import Instructor
+from qimax.stabilizer import StabilizerGenerator
 import numpy as np
 import qiskit
 import qiskit.quantum_info as qi

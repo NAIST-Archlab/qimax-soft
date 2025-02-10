@@ -1,5 +1,5 @@
-from sojo.stabilizer import StabilizerGenerator, PauliTerm, PauliWord
-from sojo.utils import generate_pauli_combination
+from qimax.stabilizer import StabilizerGenerator, PauliTerm, PauliWord
+from qimax.utils import generate_pauli_combination
 import numpy as np
 import time
 

@@ -88,7 +88,7 @@ def map_cx(indices: np.ndarray, lambdas: np.ndarray, cxs: np.ndarray, num_qubits
         # Example: df = [[0,1,2,3,4], [2,5,-3,4,1]]
         # I want to request element at [1,2,4], 
         # polors (pl) read saved df and return [5,-3,1]
-        df = pl.read_csv(f'./sojo/db/{num_qubits}_{control}_{target}_cx.csv')
+        df = pl.read_csv(f'./qimax/db/{num_qubits}_{control}_{target}_cx.csv')
         selected_rows = df[indices]['out'].to_numpy()
         indices = np.abs(selected_rows)
         lambdas[np.where(selected_rows < 0)[0]] *= -1

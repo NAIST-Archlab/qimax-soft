@@ -1,4 +1,4 @@
-from sojo.stabilizer import StabilizerGenerator
+from qimax.stabilizer import StabilizerGenerator
 import numpy as np
 import qiskit
 import qiskit.quantum_info as qi

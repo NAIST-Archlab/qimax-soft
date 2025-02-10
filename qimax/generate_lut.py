@@ -68,4 +68,4 @@ def map_cx(index, control, target, num_qubits):
 #                 ins.append(index)
 #                 outs.append(out_index)
 #             df = pd.DataFrame({'in': ins, 'out': outs})
-#             df.to_csv(f'./sojo/db/{num_qubits}_{control}_{target}_cx.csv', index=False)
+#             df.to_csv(f'./qimax/db/{num_qubits}_{control}_{target}_cx.csv', index=False)

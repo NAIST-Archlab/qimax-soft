@@ -1,9 +1,9 @@
 import time
-from sojo.stabilizer import StabilizerGenerator
+from qimax.stabilizer import StabilizerGenerator
 import numpy as np
 
 
-def wchain_xyz_sojo(num_qubits, num_layers):
+def wchain_xyz_qimax(num_qubits, num_layers):
     params = np.random.uniform(0, 2 * np.pi, 3 * num_qubits * num_layers)
     stb = StabilizerGenerator(num_qubits)
     for l in range(num_layers):
@@ -46,9 +46,9 @@ num_qubits = 6
 num_layers = 10
 
 start = time.time()
-dm_sojo = wchain_xyz_sojo(num_qubits, num_layers)
+dm_qimax = wchain_xyz_qimax(num_qubits, num_layers)
 end = time.time()
-print(f"SOJO: {end - start}")
+print(f"qimax: {end - start}")
 
 start = time.time()
 dm_qiskit = wchain_xyz_qiskit(num_qubits, num_layers)
