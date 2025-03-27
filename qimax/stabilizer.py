@@ -153,6 +153,7 @@ class PauliTerm:
     """
 
     def __init__(self, words: dict[str, list[np.complex64]]):
+        print(words)
         self.words: dict[str, list[np.complex64]] = words
         self.num_qubits = len(next(iter(words)))
 
@@ -420,7 +421,16 @@ class StabilizerGenerator:
         init_stabilizers = [PauliTerm({word: [1]}) for word in init_words]
         self.stabilizers: list[PauliTerm] = init_stabilizers
         self.ps: list[PauliTerm] = []
+    def get_p_k(k: int):
+        """Get the probability at qubit k (denote as p0_k)
 
+        Args:
+            k (int): _description_
+        """
+        
+        
+        
+        
     def __str__(self):
         string = "<"
         for i in self.stabilizers[:-1]:
@@ -460,7 +470,8 @@ class StabilizerGenerator:
         sets = get_subsets(len(self.stabilizers))
         self.ps = []
         for indices in sets:
-            p = PauliTerm({1, "i" * self.num_qubits})
+            print(indices)
+            p = PauliTerm({"i" * self.num_qubits, 1})
             for j in indices:
                 p = p.multiply(self.stabilizers[j])
             self.ps.append(p)

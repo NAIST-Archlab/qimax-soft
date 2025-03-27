@@ -1,4 +1,4 @@
-import numpy as np
+import cupy as cp
 
 def index_to_word(index: int, num_qubits: int) -> str:
     """Convert a index to coressponding word
@@ -40,23 +40,23 @@ def word_to_index(word: str) -> int:
         index = index * 4 + char_to_index(char)
     return index
 
-def char_to_weight(character: str) -> np.ndarray:
+def char_to_weight(character: str) -> cp.ndarray:
     """X -> [0, 1, 0, 0] = 0*I + 1*X + 0*Y + 0*Z
 
     Args:
         character (str): _description_
 
     Returns:
-        np.ndarray: _description_
+        cp.ndarray: _description_
     """
     if character == "x":
-        return np.array([0, 1, 0, 0])
+        return cp.array([0, 1, 0, 0])
     if character == "y":
-        return np.array([0, 0, 1, 0])
+        return cp.array([0, 0, 1, 0])
     if character == "z":
-        return np.array([0, 0, 0, 1])
+        return cp.array([0, 0, 0, 1])
     if character == "i":
-        return np.array([1, 0, 0, 0])
+        return cp.array([1, 0, 0, 0])
 
 
 def char_to_index(character: str) -> int:
@@ -77,14 +77,14 @@ def char_to_index(character: str) -> int:
     if character == "z":
         return 3
 
-def generate_pauli_combination(num_qubits: int) -> np.ndarray:
+def generate_pauli_combination(num_qubits: int) -> cp.ndarray:
     """Generater 4^num_qubits Pauli combinations 
     for a given number of qubits.
     Args:
         num_qubits (int): _description_
 
     Returns:
-        np.ndarray: _description_
+        cp.ndarray: _description_
     """
     combinations = []
     for i in range(0, 4**num_qubits):
@@ -132,7 +132,6 @@ Constants and functions for PauliComposer and PauliDecomposer classes.
 See: https://arxiv.org/abs/2301.00560
 """
 
-import numpy as np
 from numbers import Real
 
 
@@ -140,10 +139,10 @@ from numbers import Real
 PAULI_LABELS = ['I', 'X', 'Y', 'Z']
 NUM2LABEL = {ind: PAULI_LABELS[ind] for ind in range(len(PAULI_LABELS))}
 
-PAULI = {'I': np.eye(2, dtype=np.uint8),
-         'X': np.array([[0, 1], [1, 0]], dtype=np.uint8),
-         'Y': np.array([[0, -1j], [1j, 0]], dtype=np.complex64),
-         'Z': np.array([[1, 0], [0, -1]], dtype=np.int8)}
+PAULI = {'I': cp.eye(2, dtype=cp.uint8),
+         'X': cp.array([[0, 1], [1, 0]], dtype=cp.uint8),
+         'Y': cp.array([[0, -1j], [1j, 0]], dtype=cp.complex64),
+         'Z': cp.array([[1, 0], [0, -1]], dtype=cp.int8)}
 
 
 def nbytes(size: int, n_items: int) -> Real:
