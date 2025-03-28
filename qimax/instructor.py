@@ -77,6 +77,12 @@ class Instructor:
         self.orders = create_zip_chain(len(self.operators), len(self.xoperators), self.is_cx_first)
         return
 
+def instructor_to_lut(ins: Instructor):
+    """First, diving instructors into k non-cx operators and k+1/k-1/k cx-operator,
+    the, utilizing the lut (size k x n x 4 x 4)"""
+    grouped_instructorss = group_instructorss_by_qubits(ins.operators, ins.num_qubits)
+    LUT = construct_lut_noncx(grouped_instructorss, ins.num_qubits)
+    return LUT
 
 def group_instructorss_by_qubits(instructors: list, num_qubits: int) -> list:
     """Group instructors by qubits
@@ -185,4 +191,4 @@ def weightss_to_lambda(weightss: np.ndarray, lambdas) -> np.ndarray:
     # This lambdas is still in the form of 4^n x 1, 
     # we need to ignore 0 values in the next steps
     # In the worst case, there is no 0 values.
-    return new_lambdas
+    return new_lambdas,
