@@ -1,61 +1,124 @@
 import cupy as cp
+from numpy import sin, cos, sqrt
+from .utils import char_to_weight
 
 
-def mapper_noncx(character: str, instructors: list):
-    """Map a single Pauliword to list by multiple instructors
-    Related to construct_LUT_noncx.
-    Example: X -> [0, 1, 0, 0] -- h --> [0, 0, -1, 0] = -Y
-    Args:
-        character (str): I, X, Y or Z
-        instructors (list)
-    """
-    weights = char_to_weight(character)
-    for gate, _, param in instructors:
-        I, A, B, C = weights
-        if gate == "h":
-            weights = cp.array([I, C, -B, A])
-        if gate == "s":
-            weights = cp.array([I, -B, A, C])
-        if gate == "t":
-            weights = cp.array([I, (A - B) / sqrt(2), (A + B) / sqrt(2), C])
-        if gate == "rx":
-            weights = cp.array(
-                [I, A, B * cos(param) - C * sin(param), B * sin(param) + C * cos(param)]
-            )
-        if gate == "ry":
-            weights = cp.array(
-                [I, A * cos(param) + C * sin(param), B, C * cos(param) - A * sin(param)]
-            )
-        if gate == "rz":
-            weights = cp.array(
-                [I, A * cos(param) - B * sin(param), B * cos(param) + A * sin(param), C]
-            )
-    return weights
+# Hàm char_to_weight (giả định từ mã gốc)
+def char_to_weight(character: str) -> cp.ndarray:
+    if character == "i":
+        return cp.array([1, 0, 0, 0], dtype=cp.float32)
+    elif character == "x":
+        return cp.array([0, 1, 0, 0], dtype=cp.float32)
+    elif character == "y":
+        return cp.array([0, 0, 1, 0], dtype=cp.float32)
+    elif character == "z":
+        return cp.array([0, 0, 0, 1], dtype=cp.float32)
 
-
-
+# Định nghĩa CUDA kernel
+construct_lut_noncx_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void construct_lut_noncx(const float* instructors_flat, const int* offsets, const int* num_instructors,
+                         int K, int num_qubits, float* lut) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x; 
+    int total_elements = K * num_qubits * 3;
+    
+    if (idx < total_elements) {
+        int k = idx / (num_qubits * 3);
+        int j = (idx / 3) % num_qubits;
+        int i = idx % 3;
+        float weights[4];
+        if (i == 0) {  // X
+            weights[0] = 0.0f; weights[1] = 1.0f; weights[2] = 0.0f; weights[3] = 0.0f;
+        } else if (i == 1) {  // Y
+            weights[0] = 0.0f; weights[1] = 0.0f; weights[2] = 1.0f; weights[3] = 0.0f;
+        } else {  // Z
+            weights[0] = 0.0f; weights[1] = 0.0f; weights[2] = 0.0f; weights[3] = 1.0f;
+        }
+        
+        int start_offset = offsets[k * num_qubits + j];
+        int num_ins = num_instructors[k * num_qubits + j];
+        
+        for (int ins = 0; ins < num_ins; ins++) {
+            int base_offset = start_offset + ins * 3;
+            float gate_type = instructors_flat[base_offset];  
+            float param = instructors_flat[base_offset + 2];  
+            
+            float I = weights[0], A = weights[1], B = weights[2], C = weights[3];
+            if (gate_type == 0.0f) {  // h
+                weights[0] = I; weights[1] = C; weights[2] = -B; weights[3] = A;
+            } else if (gate_type == 1.0f) {  // s
+                weights[0] = I; weights[1] = -B; weights[2] = A; weights[3] = C;
+            } else if (gate_type == 2.0f) {  // t
+                float sqrt2 = 1.41421356237f;
+                weights[0] = I; 
+                weights[1] = (A - B) / sqrt2; 
+                weights[2] = (A + B) / sqrt2; 
+                weights[3] = C;
+            } else if (gate_type == 3.0f) {  // rx
+                float cos_p = cosf(param), sin_p = sinf(param);
+                weights[0] = I; 
+                weights[1] = A; 
+                weights[2] = B * cos_p - C * sin_p; 
+                weights[3] = B * sin_p + C * cos_p;
+            } else if (gate_type == 4.0f) {  // ry
+                float cos_p = cosf(param), sin_p = sinf(param);
+                weights[0] = I; 
+                weights[1] = A * cos_p + C * sin_p; 
+                weights[2] = B; 
+                weights[3] = C * cos_p - A * sin_p;
+            } else if (gate_type == 5.0f) {  // rz
+                float cos_p = cosf(param), sin_p = sinf(param);
+                weights[0] = I; 
+                weights[1] = A * cos_p - B * sin_p; 
+                weights[2] = B * cos_p + A * sin_p; 
+                weights[3] = C;
+            }
+        }
+        
+        int lut_offset = (k * num_qubits * 3 + j * 3 + i) * 4;
+        for (int w = 0; w < 4; w++) {
+            lut[lut_offset + w] = weights[w];
+        }
+    }
+}
+''', 'construct_lut_noncx')
 
 def construct_lut_noncx(grouped_instructorss, num_qubits: int):
-    """grouped_instructorss has size k x n x [?], with k is number of non-cx layer, n is number of qubits,
-    ? is the number of instructor (depend on each operator).
-    lut has size k x n x 3 x 4, with 3 is the number of Pauli (ignore I), 4 for weights
-    Args:
-        grouped_instructorss (_type_): group by qubits
-        num_qubits (int): _description_
-
-    Returns:
-        _type_: _description_
-    """
     K = len(grouped_instructorss)
-    lut = cp.zeros((K, num_qubits, 3, 4))
-    characters = ["x", "y", "z"] # Ignore I because [?]I = I
+    
+    # Chuẩn bị dữ liệu instructors_flat
+    instructors_flat = []
+    offsets = [0]
+    num_instructors = []
+    gate_map = {"h": 0, "s": 1, "t": 2, "rx": 3, "ry": 4, "rz": 5}
+    
     for k in range(K):
         for j in range(num_qubits):
-            for i in range(3):
-                lut[k][j][i] = mapper_noncx(characters[i], grouped_instructorss[k][j])
-    return lut
-
-
+            instructors = grouped_instructorss[k][j]
+            num_ins = len(instructors)
+            num_instructors.append(num_ins)
+            for gate, _, param in instructors:
+                instructors_flat.extend([float(gate_map[gate]), 0.0, float(param if param is not None else 0.0)])
+            offsets.append(offsets[-1] + num_ins * 3)
+    
+    instructors_flat = cp.array(instructors_flat, dtype=cp.float32)
+    offsets = cp.array(offsets[:-1], dtype=cp.int32)
+    num_instructors = cp.array(num_instructors, dtype=cp.int32)
+    
+    # Tạo mảng lut trên GPU
+    lut = cp.zeros((K, num_qubits, 3, 4), dtype=cp.float32)
+    lut_flat = lut.reshape(K * num_qubits * 3 * 4)
+    
+    # Cấu hình block và grid
+    total_elements = K * num_qubits * 3
+    block_size = 256
+    grid_size = (total_elements + block_size - 1) // block_size
+    
+    # Gọi kernel
+    construct_lut_noncx_kernel((grid_size,), (block_size,), 
+                              (instructors_flat, offsets, num_instructors, K, num_qubits, lut_flat))
+    
+    return lut.reshape(K, num_qubits, 3, 4)
 
 
 def weightss_to_lambda(weightss: cp.ndarray, lambdas: cp.ndarray) -> cp.ndarray:

@@ -148,10 +148,7 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     lut has size k x n x 3 x 4, with 3 is the number of Pauli (ignore I), 4 for weights
     Args:
         grouped_instructorss (_type_): group by qubits
-        num_qubits (int): _description_
-
-    Returns:
-        _type_: _description_
+        num_qubits (int)
     """
     K = len(grouped_instructorss)
     lut = np.zeros((K, num_qubits, 3, 4))

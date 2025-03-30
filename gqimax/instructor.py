@@ -2,7 +2,7 @@ import numpy as np
 import cupy as cp
 from numpy import sin, cos, sqrt
 from .utils import index_to_word, char_to_weight, create_zip_chain
-from .mapper import instructor_to_lut, map_cx, map_noncx
+from .mapper import construct_lut_noncx
 class Instructor:
     """List of instructors
     """
@@ -78,6 +78,12 @@ class Instructor:
         self.orders = create_zip_chain(len(self.operators), len(self.xoperators), self.is_cx_first)
         return
 
+def instructor_to_lut(ins: Instructor):
+    """First, diving instructors into k non-cx operators and k+1/k-1/k cx-operator,
+    the, utilizing the lut (size k x n x 4 x 4)"""
+    grouped_instructorss = group_instructorss_by_qubits(ins.operators, ins.num_qubits)
+    LUT = construct_lut_noncx(grouped_instructorss, ins.num_qubits)
+    return LUT
 
 def group_instructorss_by_qubits(instructors: list, num_qubits: int) -> list:
     """Group instructors by qubits
