@@ -2,8 +2,6 @@ import cupy as cp
 from numpy import sin, cos, sqrt
 from .utils import char_to_weight
 
-
-# Hàm char_to_weight (giả định từ mã gốc)
 def char_to_weight(character: str) -> cp.ndarray:
     if character == "i":
         return cp.array([1, 0, 0, 0], dtype=cp.float32)
@@ -14,7 +12,44 @@ def char_to_weight(character: str) -> cp.ndarray:
     elif character == "z":
         return cp.array([0, 0, 0, 1], dtype=cp.float32)
 
-# Định nghĩa CUDA kernel
+# ------------------------------------- #
+# ---- map_noncx to map_cx section ---- #
+# ------------------------------------- #
+
+def weightss_to_lambda(weightss: cp.ndarray, lambdas: cp.ndarray) -> cp.ndarray:
+    """A sum of transformed word (a matrix 4^n x n x 4) to list
+    Example for a single transformed word (treated as 1 term): 
+        k*[[1,2,3,4], [1,2,3,4]] 
+            -> k*[1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12, 4, 8, 12, 16]
+    Example for this function (sum, 2 qubits, 3 term):
+        [[[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]]] 
+            -> [ 3.  6.  9. 12.  6. 12. 18. 24.  9. 18. 27. 36. 12. 24. 36. 48.]
+    Args:
+        weightss (np.ndarray): _description_
+
+    Returns:
+        np.ndarray: lambdas
+    """
+    num_terms, num_qubits, _ = weightss.shape
+    new_lambdas = cp.zeros(4**num_qubits)
+    for j in range(num_terms):
+        weights = weightss[j]
+        products = weights[0]
+        for k in range(1, num_qubits):
+            products = cp.outer(products, weights[k]).ravel()
+        new_lambdas += lambdas[j] * products
+    # This lambdas is still in the form of 4^n x 1, 
+    # we need to ignore 0 values in the next steps
+    # In the worst case, there is no 0 values.
+    return new_lambdas
+
+
+
+# --------------------------- #
+# ---- map_noncx section ---- #
+# --------------------------- #
+
+
 construct_lut_noncx_kernel = cp.RawKernel(r'''
 extern "C" __global__
 void construct_lut_noncx(const float* instructors_flat, const int* offsets, const int* num_instructors,
@@ -86,7 +121,6 @@ void construct_lut_noncx(const float* instructors_flat, const int* offsets, cons
 def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     K = len(grouped_instructorss)
     
-    # Chuẩn bị dữ liệu instructors_flat
     instructors_flat = []
     offsets = [0]
     num_instructors = []
@@ -105,63 +139,26 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     offsets = cp.array(offsets[:-1], dtype=cp.int32)
     num_instructors = cp.array(num_instructors, dtype=cp.int32)
     
-    # Tạo mảng lut trên GPU
     lut = cp.zeros((K, num_qubits, 3, 4), dtype=cp.float32)
     lut_flat = lut.reshape(K * num_qubits * 3 * 4)
     
-    # Cấu hình block và grid
     total_elements = K * num_qubits * 3
     block_size = 256
     grid_size = (total_elements + block_size - 1) // block_size
     
-    # Gọi kernel
     construct_lut_noncx_kernel((grid_size,), (block_size,), 
                               (instructors_flat, offsets, num_instructors, K, num_qubits, lut_flat))
     
     return lut.reshape(K, num_qubits, 3, 4)
 
 
-def weightss_to_lambda(weightss: cp.ndarray, lambdas: cp.ndarray) -> cp.ndarray:
-    """A sum of transformed word (a matrix 4^n x n x 4) to list
-    Example for a single transformed word (treated as 1 term): 
-        k*[[1,2,3,4], [1,2,3,4]] 
-            -> k*[1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12, 4, 8, 12, 16]
-    Example for this function (sum, 2 qubits, 3 term):
-        [[[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]]] 
-            -> [ 3.  6.  9. 12.  6. 12. 18. 24.  9. 18. 27. 36. 12. 24. 36. 48.]
-    Args:
-        weightss (np.ndarray): _description_
-
-    Returns:
-        np.ndarray: lambdas
-    """
-    num_terms, num_qubits, _ = weightss.shape
-    new_lambdas = cp.zeros(4**num_qubits)
-    for j in range(num_terms):
-        weights = weightss[j]
-        products = weights[0]
-        for k in range(1, num_qubits):
-            products = cp.outer(products, weights[k]).ravel()
-        new_lambdas += lambdas[j] * products
-    # This lambdas is still in the form of 4^n x 1, 
-    # we need to ignore 0 values in the next steps
-    # In the worst case, there is no 0 values.
-    return new_lambdas
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
+# --------------------------- #
+# ----- map_cx section ------ #
+# --------------------------- #
 
 # I accelerate the CNOT gate on GPU using cupy
 # With indices_array is a list of integers representing the Pauli words
@@ -247,7 +244,7 @@ map_cx_kernel = cp.RawKernel(r'''
     }
 ''', 'map_cx')
 
-def map_cx_big(indices_array, control, target, n, max_memory_bytes=8*1024*1024*1024):
+def map_cx(indices_array, control, target, n, max_memory_bytes=8*1024*1024*1024):
     bytes_per_element = 4*12
     max_elements_per_chunk = max_memory_bytes // bytes_per_element
     
@@ -288,6 +285,61 @@ def map_cx_big(indices_array, control, target, n, max_memory_bytes=8*1024*1024*1
 # ----- GPU version (not effecifient) - #
 # ------------------------------------- #
 
+
+# def map_noncx(indices: cp.ndarray, lambdas: cp.ndarray, LUT, k: int, num_qubits: int):
+#     """Given a list of indices and lambdas, return the indices and lambdas of the non-cx gates.
+#     Example:
+#         Initial: 1*IZ => indices = [3], lambdas = [1]
+#         Another: 2*XZ + 3*YY => indices = [7, 10], lambdas = [2, 3]
+#     Args:
+#         indices (cp.ndarray)
+#         lambdas (cp.ndarray)
+#         num_qubits (int)
+#         k: index of the operator
+#     Returns:
+#         cp.ndarray, cp.ndarray: mapped indices and lambdas
+#     """
+#     weightss = []
+#     for index in indices:
+#         weights = []
+#         word = index_to_word(index, num_qubits)
+#         for j, char in enumerate(word):
+#             i_in_lut = char_to_index(char) - 1
+#             if i_in_lut == -1:
+#                 weights.append([1,0,0,0])
+#             else: 
+#                 weights.append(LUT[k][j][i_in_lut])
+#         weightss.append(weights)
+#     # Weightss's now a 4-d tensor, 4^n x n x 4
+#     weightss = cp.array(weightss)
+#     # Flattening the weightss into new lambdas, => Can be process effeciently on hardware
+#     lambdas = weightss_to_lambda(weightss, lambdas)
+#     # For most of the cases, lambdas will be sparse
+#     # In the worst case, it will be full dense,
+#     # and the below lines would be useless.
+#     indices = cp.nonzero(lambdas)[0]
+#     lambdas = lambdas[indices]
+#     return indices, lambdas
+
+# def map_cx(indices: cp.ndarray, lambdas: cp.ndarray, cxs: cp.ndarray, num_qubits: int):
+#     """Mapping multiple CX gates on a given indices and lambdas
+
+#     Args:
+#         indices (cp.ndarray): Words after converting to integers
+#         lambdas (cp.ndarray): Corresponding lambdas
+#         cxs (cp.ndarray): List of [control, target] pairs from k^th CX-operator
+#         num_qubits (int)
+
+#     Returns:
+#         indices, lambdas
+#     """
+#     for control, target in cxs:
+#         df = pl.read_csv(f'./qimax/db/{num_qubits}_{control}_{target}_cx.csv')
+#         out_array = cp.array(df['out'].to_numpy())
+#         selected_rows = out_array[indices]
+#         indices = cp.abs(selected_rows)
+#         lambdas[cp.where(selected_rows < 0)[0]] *= -1
+#     return indices, lambdas
 
 # def get_digit(index, k, n):
 #     return (index >> (2 * (n - 1 - k))) & 3

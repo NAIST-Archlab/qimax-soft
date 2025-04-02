@@ -1,6 +1,6 @@
 import numpy as np
 from numpy import sin, cos, sqrt
-from .utils import index_to_word, char_to_weight, create_zip_chain
+from .utils import char_to_weight, create_zip_chain
 
 class Instructor:
     """List of instructors
