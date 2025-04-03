@@ -16,15 +16,33 @@ def index_to_word(index: int, num_qubits: int) -> str:
     """
     char_map = ['i', 'x', 'y', 'z']
     word = []
-    if index < 0 or index >= 4**num_qubits:
-        raise ValueError('Index out of bounds. must from 0 to 4**num_qubits - 1')
     for _ in range(num_qubits):
         word.append(char_map[index % 4])
         index //= 4
     return ''.join(reversed(word))
 
 
-
+def index_to_indices(index: int, num_qubits: int) -> cp.ndarray:
+    """Convert a index to coressponding word
+    Example: index 4, 2 (qubits) -> IX --> [0, 1]
+    Example: index 255, 4 (qubits) -> ZZZZ --> [3, 3, 3, 3]
+    Args:
+        index (int): An integer from 0 to 4**num_qubits - 1
+        num_qubits (int)
+    """
+    words = index_to_word(index, num_qubits)
+    indices = []
+    for word in words:
+        if word == "i":
+            indices.append(0)
+        elif word == "x":
+            indices.append(1)
+        elif word == "y":
+            indices.append(2)
+        elif word == "z":
+            indices.append(3)
+    
+    return cp.array(indices)
 def word_to_index(word: str) -> int:
     """Convert word to corresponding index in array of 4^n
     Example: IX -> 1*4^1 + 0*4^0 = 4
@@ -91,10 +109,21 @@ def generate_pauli_combination(num_qubits: int) -> cp.ndarray:
         combinations.append(index_to_word(i, num_qubits	))
     return combinations
 
+# def create_word_zj(j, num_qubits):
+#     if j < 0 or j >= num_qubits:
+#         raise ValueError('j out of bounds. must from 0 to num_qubits - 1')
+#     return "i" * j + "z" + "i" * (num_qubits - j - 1)
+
 def create_word_zj(j, num_qubits):
     if j < 0 or j >= num_qubits:
         raise ValueError('j out of bounds. must from 0 to num_qubits - 1')
-    return "i" * j + "z" + "i" * (num_qubits - j - 1)
+    indices = [0] * num_qubits
+    indices[j] = 3
+    return cp.array(indices)
+
+
+
+
 
 def create_zip_chain(num_operators, num_xoperators, is_cx_first):
     """Create list 0,1,0,1,...

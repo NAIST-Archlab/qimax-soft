@@ -17,15 +17,13 @@ def char_to_weight(character: str) -> cp.ndarray:
 # ------------------------------------- #
 
 def weightss_to_lambda(weightss: cp.ndarray, lambdas: cp.ndarray) -> cp.ndarray:
-    """A sum of transformed word (a matrix 4^n x n x 4) to list
+    """A sum of transformed word (a matrix k x n x 4) to list
     Example for a single transformed word (treated as 1 term): 
-        k*[[1,2,3,4], [1,2,3,4]] 
-            -> k*[1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12, 4, 8, 12, 16]
+        lambda*[[1,2,3,4], [1,2,3,4]] 
+            -> lambda*[1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12, 4, 8, 12, 16]
     Example for this function (sum, 2 qubits, 3 term):
         [[[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]]] 
             -> [ 3.  6.  9. 12.  6. 12. 18. 24.  9. 18. 27. 36. 12. 24. 36. 48.]
-    Args:
-        weightss (np.ndarray): _description_
 
     Returns:
         np.ndarray: lambdas
@@ -41,7 +39,42 @@ def weightss_to_lambda(weightss: cp.ndarray, lambdas: cp.ndarray) -> cp.ndarray:
     # This lambdas is still in the form of 4^n x 1, 
     # we need to ignore 0 values in the next steps
     # In the worst case, there is no 0 values.
-    return new_lambdas
+    non_zeros_indices = cp.nonzero(new_lambdas)[0]
+    new_lambdas = new_lambdas[non_zeros_indices]
+    return new_lambdas, non_zeros_indices
+
+def weightsss_to_lambdas(weightsss: list, lambdass: list) -> cp.ndarray:
+    """
+    A n-qubit of weightss_to_lambdas function
+    weightsss: n x k x n x 4
+    lambdass: n x k
+    """
+    n = len(weightsss)
+    lambdass = []
+    non_zeros_indicess = []
+    for i in range(n):
+        new_lambdas, non_zeros_indices = weightss_to_lambda(
+            weightsss[i], # k_i x n x 4
+            lambdass[i]  # k_i
+        )  # Shape: (?,)
+        lambdass.append(new_lambdas)
+        non_zeros_indicess.append(non_zeros_indices)
+        
+    return lambdass, non_zeros_indicess  # Shape: (n, k_i), lambdass.shape = indicess.shape
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -152,130 +185,319 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     return lut.reshape(K, num_qubits, 3, 4)
 
 
+# # --------------------------- #
+# # ----- map_cx section ------ #
+# # --------------------------- #
 
+import cupy as cp
 
-
-
-# --------------------------- #
-# ----- map_cx section ------ #
-# --------------------------- #
-
-# I accelerate the CNOT gate on GPU using cupy
-# With indices_array is a list of integers representing the Pauli words
-# control and target are the indices of the control and target qubits
+# Định nghĩa kernel CUDA
 map_cx_kernel = cp.RawKernel(r'''
-    extern "C" __global__
-    void map_cx(int* indices_array, int control, int target, int num_qubits, int* lambdas_array, int num_words) {
-        int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx < num_words) {
-            int word_int = indices_array[idx];
-            
-            auto get_digit = [](int word_int, int k, int num_qubits) {
-                return (word_int >> (2 * (num_qubits - 1 - k))) & 3;
-            };
-            
-            auto set_digit = [](int word_int, int k, int new_digit, int num_qubits) {
-                int shift = 2 * (num_qubits - 1 - k);
-                word_int &= ~(3 << shift);  
-                word_int |= (new_digit << shift);  
-                return word_int;
-            };
-            
-            int char_control = get_digit(word_int, control, num_qubits);
-            int char_target = get_digit(word_int, target, num_qubits);
-            
-            int new_control = char_control;
-            int new_target = char_target;
+extern "C" __global__
+void map_cx_kernel(
+    const char* words_array,  
+    char* new_words_array,     
+    char* lambdas,            
+    int k,                    
+    int n,              
+    int control,                
+    int target                 
+) {
+    // Lookup tables
+    const char new_control_table[4][4] = {
+        {0, 0, 3, 3},
+        {1, 1, 2, 2},
+        {2, 2, 1, 1},
+        {3, 3, 0, 0}
+    };
+    const char new_target_table[4][4] = {
+        {0, 1, 2, 3},
+        {1, 0, 3, 2},
+        {1, 2, 3, 2},
+        {0, 1, 2, 3}
+    };
+    const char lambda_table[4][4] = {
+        {1, 1, 1, 1},
+        {1, 1, 1, -1},
+        {1, 1, -1, 1},
+        {1, 1, 1, 1}
+    };
 
-            
-            if (char_control == 0) {  // 'i'
-                if (char_target == 2) {  // 'y'
-                    new_control = 3;  // 'z'
-                    new_target = 2;   // 'y'
-                } else if (char_target == 3) {  // 'z'
-                    new_control = 3;  // 'z'
-                    new_target = 3;   // 'z'
-                }
-            } else if (char_control == 1) {  // 'x'
-                if (char_target == 0) {  // 'i'
-                    new_control = 1;  // 'x'
-                    new_target = 1;   // 'x'
-                } else if (char_target == 1) {  // 'x'
-                    new_control = 1;  // 'x'
-                    new_target = 0;   // 'i'
-                } else if (char_target == 2) {  // 'y'
-                    new_control = 2;  // 'y'
-                    new_target = 3;   // 'z'
-                } else if (char_target == 3) {  // 'z'
-                    lambdas_array[idx] = -1;
-                    new_control = 2;  // 'y'
-                    new_target = 2;   // 'y'
-                }
-            } else if (char_control == 2) {  // 'y'
-                if (char_target == 0) {  // 'i'
-                    new_control = 2;  // 'y'
-                    new_target = 1;   // 'x'
-                } else if (char_target == 1) {  // 'x'
-                    new_control = 2;  // 'y'
-                    new_target = 2;   // 'y'
-                } else if (char_target == 2) {  // 'y'
-                    new_control = 1;  // 'x'
-                    new_target = 3;   // 'z'
-                    lambdas_array[idx] = -1;
-                } else if (char_target == 3) {  // 'z'
-                    new_control = 1;  // 'x'
-                    new_target = 2;   // 'y'
-                }
-            } else if (char_control == 3) {  // 'z'
-                if (char_target == 2) {  // 'y'
-                    new_control = 0;  // 'i'
-                    new_target = 2;   // 'y'
-                } else if (char_target == 3) {  // 'z'
-                    new_control = 0;  // 'i'
-                    new_target = 3;   // 'z'
-                }
-            }
-            
-            int new_word_int = set_digit(word_int, control, new_control, num_qubits);
-            new_word_int = set_digit(new_word_int, target, new_target, num_qubits);
-            
-            indices_array[idx] = new_word_int;
-        }
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (idx >= k) return;
+
+    int offset = idx * n;
+
+    for (int i = 0; i < n; i++) {
+        new_words_array[offset + i] = words_array[offset + i];
     }
-''', 'map_cx')
 
-def map_cx(indices_array, control, target, n, max_memory_bytes=8*1024*1024*1024):
-    bytes_per_element = 4*12
-    max_elements_per_chunk = max_memory_bytes // bytes_per_element
-    
-    num_words = len(indices_array)
-    chunk_size = min(max_elements_per_chunk, num_words)
-    
-    num_chunks = (num_words + chunk_size - 1) // chunk_size
+    char control_val = words_array[offset + control];
+    char target_val = words_array[offset + target];
 
-    result_full = cp.zeros(num_words, dtype=cp.int32)
-    lambdas_full = cp.zeros(num_words, dtype=cp.int32)
+    new_words_array[offset + control] = new_control_table[control_val][target_val];
+    new_words_array[offset + target] = new_target_table[control_val][target_val];
+    lambdas[idx] = lambda_table[control_val][target_val];
+}
+''', 'map_cx_kernel')
+
+# Hàm wrapper để gọi kernel
+def cuda_map_cx(words_array, control, target):
+    """
+    Áp dụng map_cx trên mảng k word bằng CUDA kernel.
+    Args:
+        words_array: cp.ndarray shape (k, n), dtype=cp.int8
+        control: int, chỉ số control
+        target: int, chỉ số target
+    Returns:
+        lambdas: cp.ndarray shape (k,), dtype=cp.int8
+        new_words_array: cp.ndarray shape (k, n), dtype=cp.int8
+    """
+    k, n = words_array.shape
+    new_words_array = cp.empty_like(words_array, dtype=cp.int8)
+    lambdas = cp.empty(k, dtype=cp.int8)
+
     block_size = 256
+    grid_size = (k + block_size - 1) // block_size
+
+    map_cx_kernel((grid_size,), (block_size,), 
+                  (words_array, new_words_array, lambdas, k, n, control, target))
+
+    return lambdas, new_words_array
+
+def flatten_ragged_matrix_cupy(ragged_matrix):
+    lengths = cp.array([len(row) for row in ragged_matrix], dtype=cp.int8)
+    starts = cp.concatenate((cp.array([0]), cp.cumsum(lengths)), dtype=cp.int8)
+    flatten_vector = cp.concatenate(ragged_matrix, dtype=cp.int8)
+    return flatten_vector, starts[:-1]
+
+def unflatten_ragged_matrix_cupy(flatten_vector, starts):
+    return cp.vsplit(flatten_vector, starts[1:].tolist())
+
+def map_cx(ragged_lambdas, ragged_tensor, control, target):
+    """
+    --- First, I encode the n-qubit Pauli word as list of n int8 array
+    Ex: XYI --> [1, 2, 0]
+    For n-stabilizer, we have n x k words, so the encoded tensor will be n x k x n (ragged tensor)
+    --- Next step, I flatten this tensor to 1D array (each element is still n-dim array)
+    Flatten vector: [[0 1 2]
+    [0 2 2]
+    [0 3 2]
+    [1 2 3]
+    [2 3 1]
+    [2 2 1]]
+    --- Map this array to the new array using map_cx kernel
+    Mapped flatten vector: [[0 1 2]
+    [3 2 2]
+    [3 3 2]
+    [2 3 3]
+    [1 2 1]
+    [1 3 1]]
+    Lambdas: [ 1  1  1  1  1 -1]
     
-    for i in range(num_chunks):
-        start_idx = i * chunk_size
-        end_idx = min((i + 1) * chunk_size, num_words)
-        chunk_words = end_idx - start_idx
+    --- Finally, I unflatten the mapped array to the original shape (ragged tensor)
+    --- Obviously, this function requires starts variable (the start index of each row in the flatten vector)
+    
+    Out ragged tensor (with starts = [0,3,4]): [array([[0, 1, 2],
+        [3, 2, 2],
+        [3, 3, 2]], dtype=int8), array([[2, 3, 3]], dtype=int8), array([[1, 2, 1],
+        [1, 3, 1]], dtype=int8)]
+
+    """
+    flatten_vector, starts = flatten_ragged_matrix_cupy(ragged_tensor)
+    lambdas_sign, mapped_flatten_vector = cuda_map_cx(flatten_vector, control, target)
+    starts = starts[1:].tolist()
+	# Convert flatten vector to ragged tensor
+    ragged_tensor = cp.vsplit(mapped_flatten_vector, starts)
+    lambdas_sign = cp.split(lambdas_sign, starts)
+	# OP: lambdas_sign * ragged_lambdas
+    # This operator can be implemented in CUDA kernel (in file notebook)
+    # But I see there is no different between two methods
+    return [cp.multiply(m1, m2) for m1, m2 in zip(ragged_lambdas, lambdas_sign)], ragged_tensor
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ELIMINATE DUE TO THE INEFFICIENT OF THE CODE
+# IN CASE LARGE N, the final element of the array will be 4^n
+# I see that if we use int32, it only presented 16 qubits
+
+
+
+
+# # --------------------------- #
+# # ----- map_cx section ------ #
+# # --------------------------- #
+
+# # I accelerate the CNOT gate on GPU using cupy
+# # With indices_array is a list of integers representing the Pauli words
+# # control and target are the indices of the control and target qubits
+# map_cx_kernel = cp.RawKernel(r'''
+#     extern "C" __global__
+#     void map_cx(int* indices_array, int control, int target, int num_qubits, int* lambdas_array, int num_words) {
+#         int idx = blockIdx.x * blockDim.x + threadIdx.x;
+#         if (idx < num_words) {
+#             int word_int = indices_array[idx];
+            
+#             auto get_digit = [](int word_int, int k, int num_qubits) {
+#                 return (word_int >> (2 * (num_qubits - 1 - k))) & 3;
+#             };
+            
+#             auto set_digit = [](int word_int, int k, int new_digit, int num_qubits) {
+#                 int shift = 2 * (num_qubits - 1 - k);
+#                 word_int &= ~(3 << shift);  
+#                 word_int |= (new_digit << shift);  
+#                 return word_int;
+#             };
+            
+#             int char_control = get_digit(word_int, control, num_qubits);
+#             int char_target = get_digit(word_int, target, num_qubits);
+            
+#             int new_control = char_control;
+#             int new_target = char_target;
+
+            
+#             if (char_control == 0) {  // 'i'
+#                 if (char_target == 2) {  // 'y'
+#                     new_control = 3;  // 'z'
+#                     new_target = 2;   // 'y'
+#                 } else if (char_target == 3) {  // 'z'
+#                     new_control = 3;  // 'z'
+#                     new_target = 3;   // 'z'
+#                 }
+#             } else if (char_control == 1) {  // 'x'
+#                 if (char_target == 0) {  // 'i'
+#                     new_control = 1;  // 'x'
+#                     new_target = 1;   // 'x'
+#                 } else if (char_target == 1) {  // 'x'
+#                     new_control = 1;  // 'x'
+#                     new_target = 0;   // 'i'
+#                 } else if (char_target == 2) {  // 'y'
+#                     new_control = 2;  // 'y'
+#                     new_target = 3;   // 'z'
+#                 } else if (char_target == 3) {  // 'z'
+#                     lambdas_array[idx] = -1;
+#                     new_control = 2;  // 'y'
+#                     new_target = 2;   // 'y'
+#                 }
+#             } else if (char_control == 2) {  // 'y'
+#                 if (char_target == 0) {  // 'i'
+#                     new_control = 2;  // 'y'
+#                     new_target = 1;   // 'x'
+#                 } else if (char_target == 1) {  // 'x'
+#                     new_control = 2;  // 'y'
+#                     new_target = 2;   // 'y'
+#                 } else if (char_target == 2) {  // 'y'
+#                     new_control = 1;  // 'x'
+#                     new_target = 3;   // 'z'
+#                     lambdas_array[idx] = -1;
+#                 } else if (char_target == 3) {  // 'z'
+#                     new_control = 1;  // 'x'
+#                     new_target = 2;   // 'y'
+#                 }
+#             } else if (char_control == 3) {  // 'z'
+#                 if (char_target == 2) {  // 'y'
+#                     new_control = 0;  // 'i'
+#                     new_target = 2;   // 'y'
+#                 } else if (char_target == 3) {  // 'z'
+#                     new_control = 0;  // 'i'
+#                     new_target = 3;   // 'z'
+#                 }
+#             }
+            
+#             int new_word_int = set_digit(word_int, control, new_control, num_qubits);
+#             new_word_int = set_digit(new_word_int, target, new_target, num_qubits);
+            
+#             indices_array[idx] = new_word_int;
+#         }
+#     }
+# ''', 'map_cx')
+
+# def map_cx(indices_array, control, target, n, max_memory_bytes=8*1024*1024*1024):
+#     bytes_per_element = 4*12
+#     max_elements_per_chunk = max_memory_bytes // bytes_per_element
+    
+#     num_words = len(indices_array)
+#     chunk_size = min(max_elements_per_chunk, num_words)
+    
+#     num_chunks = (num_words + chunk_size - 1) // chunk_size
+
+#     result_full = cp.zeros(num_words, dtype=cp.int32)
+#     lambdas_full = cp.zeros(num_words, dtype=cp.int32)
+#     block_size = 256
+    
+#     for i in range(num_chunks):
+#         start_idx = i * chunk_size
+#         end_idx = min((i + 1) * chunk_size, num_words)
+#         chunk_words = end_idx - start_idx
         
-        word_int_chunk = cp.array(indices_array[start_idx:end_idx], dtype=cp.int32)
-        result_chunk = cp.zeros(chunk_words, dtype=cp.int32)
-        lambdas_chunk = cp.zeros(chunk_words, dtype=cp.int32)
+#         word_int_chunk = cp.array(indices_array[start_idx:end_idx], dtype=cp.int32)
+#         result_chunk = cp.zeros(chunk_words, dtype=cp.int32)
+#         lambdas_chunk = cp.zeros(chunk_words, dtype=cp.int32)
         
-        grid_size = (chunk_words + block_size - 1) // block_size
+#         grid_size = (chunk_words + block_size - 1) // block_size
         
 
-        map_cx_kernel((grid_size,), (block_size,), 
-                         (word_int_chunk, control, target, n, result_chunk, lambdas_chunk, chunk_words))
+#         map_cx_kernel((grid_size,), (block_size,), 
+#                          (word_int_chunk, control, target, n, result_chunk, lambdas_chunk, chunk_words))
 
-        result_full[start_idx:end_idx] = result_chunk
-        lambdas_full[start_idx:end_idx] = lambdas_chunk
+#         result_full[start_idx:end_idx] = result_chunk
+#         lambdas_full[start_idx:end_idx] = lambdas_chunk
     
-    return result_full, lambdas_full
+#     return result_full, lambdas_full
 
 
 

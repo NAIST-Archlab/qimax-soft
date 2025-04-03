@@ -3,10 +3,10 @@ import polars as pl
 from .mapper import weightss_to_lambda
 from .instructor import Instructor
 from .utils import word_to_index, char_to_index, index_to_word, create_word_zj
-from .mapper import map_noncx, map_cx
 
-class PStabilizer:
-    def __init__(self, j: int, num_qubits: int):
+
+class PStabilizers:
+    def __init__(self, num_qubits: int):
         """PStabilizer is a Pauli term
         I encode it as two lists: indices (encoded Pauli words) and lambdas
 
@@ -17,8 +17,14 @@ class PStabilizer:
         # Init n stabilizer 
         # Each stabilizer is Z_j = I \otimes ... \otimes I \otimes Z (j^th) \otimes I \otimes ... \
         self.num_qubits = num_qubits
-        self.lambdas = cp.ones(num_qubits)
-        self.indices = cp.array([word_to_index(create_word_zj(j, num_qubits))])
+        self.lambdass = [
+            cp.ones(1)
+            for _ in range(num_qubits)]
+
+        self.indicess = [
+            # Create word Z_j
+            cp.expand_dims(create_word_zj(j, num_qubits), axis=0) 
+            for j in range(num_qubits)]
         return
     def at(self, j: int | str):
         if type(j) == str:
