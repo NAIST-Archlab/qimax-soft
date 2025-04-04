@@ -1,8 +1,5 @@
-import numpy as np
-import cupy as cp
-from numpy import sin, cos, sqrt
-from .utils import index_to_word, char_to_weight, create_zip_chain
-from .mapper import construct_lut_noncx
+
+
 from collections import deque
 class Instructor:
     def __init__(self, num_qubits):
@@ -47,6 +44,7 @@ class Instructor:
                 if len(self.operator) > 0:
                     self.operators.append(self.operator)
                 if len(self.xoperator) > 0:
+                    print("xoperator", self.xoperator)
                     self.xoperators.append(self.xoperator)
                 self.instructors.extendleft(self.operator_temp[::-1])
                 self.operator = []
@@ -61,7 +59,36 @@ class Instructor:
             self.operators.append(self.operator_temp)
         if len(self.xoperator) > 0:
             self.xoperators.append(self.xoperator)
-        
+        def create_zip_chain(num_operators, num_xoperators, is_cx_first):
+            """Create list 0,1,0,1,...
+            If is_cx_first is True, then 1 is first, else 0 is first
+            Args:
+                n (_type_): _description_
+                m (_type_): _description_
+                is_cx_first (bool): _description_
+
+            Returns:
+                _type_: _description_
+            """
+            result = []
+            while num_operators > 0 or num_xoperators > 0:
+                if is_cx_first:
+                    if num_xoperators > 0:
+                        result.append(1)
+                        num_xoperators -= 1
+                    if num_operators > 0:
+                        result.append(0)
+                        num_operators -= 1
+                else:   
+                    if num_operators > 0:
+                        result.append(0)
+                        num_operators -= 1
+                    if num_xoperators > 0:
+                        result.append(1)
+                        num_xoperators -= 1
+            return result
+
+
         self.orders = create_zip_chain(len(self.operators), len(self.xoperators), self.is_cx_first)
         return
     

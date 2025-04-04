@@ -16,7 +16,7 @@ def char_to_weight(character: str) -> cp.ndarray:
 # ---- map_noncx to map_cx section ---- #
 # ------------------------------------- #
 
-def weightss_to_lambda(weightss: cp.ndarray, lambdas: cp.ndarray) -> cp.ndarray:
+def weightss_to_lambda(lambdas: cp.ndarray, weightss: cp.ndarray) -> cp.ndarray:
     """A sum of transformed word (a matrix k x n x 4) to list
     Example for a single transformed word (treated as 1 term): 
         lambda*[[1,2,3,4], [1,2,3,4]] 
@@ -43,24 +43,26 @@ def weightss_to_lambda(weightss: cp.ndarray, lambdas: cp.ndarray) -> cp.ndarray:
     new_lambdas = new_lambdas[non_zeros_indices]
     return new_lambdas, non_zeros_indices
 
-def weightsss_to_lambdas(weightsss: list, lambdass: list) -> cp.ndarray:
+def weightsss_to_lambdas(lambdass: list, weightsss: list) -> cp.ndarray:
     """
     A n-qubit of weightss_to_lambdas function
+    Simply, do weightss_to_lambdas n times parallelly 
     weightsss: n x k x n x 4
     lambdass: n x k
     """
     n = len(weightsss)
-    lambdass = []
+    mapped_lambdass = []
     non_zeros_indicess = []
     for i in range(n):
         new_lambdas, non_zeros_indices = weightss_to_lambda(
+            lambdass[i],  # k_i
             weightsss[i], # k_i x n x 4
-            lambdass[i]  # k_i
         )  # Shape: (?,)
-        lambdass.append(new_lambdas)
+        mapped_lambdass.append(new_lambdas)
         non_zeros_indicess.append(non_zeros_indices)
-        
-    return lambdass, non_zeros_indicess  # Shape: (n, k_i), lambdass.shape = indicess.shape
+    # Mapped (flatten) lambdass: n x k_i
+    # Indices: n x k_i -- mapped from int to list --> indicess: n x k_i x n
+    return mapped_lambdass, map_indices_to_indicess(non_zeros_indicess)  
 
 
 
@@ -193,53 +195,53 @@ import cupy as cp
 
 # Định nghĩa kernel CUDA
 map_cx_kernel = cp.RawKernel(r'''
-extern "C" __global__
-void map_cx_kernel(
-    const char* words_array,  
-    char* new_words_array,     
-    char* lambdas,            
-    int k,                    
-    int n,              
-    int control,                
-    int target                 
-) {
-    // Lookup tables
-    const char new_control_table[4][4] = {
-        {0, 0, 3, 3},
-        {1, 1, 2, 2},
-        {2, 2, 1, 1},
-        {3, 3, 0, 0}
-    };
-    const char new_target_table[4][4] = {
-        {0, 1, 2, 3},
-        {1, 0, 3, 2},
-        {1, 2, 3, 2},
-        {0, 1, 2, 3}
-    };
-    const char lambda_table[4][4] = {
-        {1, 1, 1, 1},
-        {1, 1, 1, -1},
-        {1, 1, -1, 1},
-        {1, 1, 1, 1}
-    };
+    extern "C" __global__
+    void map_cx_kernel(
+        const char* words_array,  
+        char* new_words_array,     
+        char* lambdas,            
+        int k,                    
+        int n,              
+        int control,                
+        int target                 
+    ) {
+        // Lookup tables
+        const char new_control_table[4][4] = {
+            {0, 0, 3, 3},
+            {1, 1, 2, 2},
+            {2, 2, 1, 1},
+            {3, 3, 0, 0}
+        };
+        const char new_target_table[4][4] = {
+            {0, 1, 2, 3},
+            {1, 0, 3, 2},
+            {1, 2, 3, 2},
+            {0, 1, 2, 3}
+        };
+        const char lambda_table[4][4] = {
+            {1, 1, 1, 1},
+            {1, 1, 1, -1},
+            {1, 1, -1, 1},
+            {1, 1, 1, 1}
+        };
 
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+        int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (idx >= k) return;
+        if (idx >= k) return;
 
-    int offset = idx * n;
+        int offset = idx * n;
 
-    for (int i = 0; i < n; i++) {
-        new_words_array[offset + i] = words_array[offset + i];
+        for (int i = 0; i < n; i++) {
+            new_words_array[offset + i] = words_array[offset + i];
+        }
+
+        char control_val = words_array[offset + control];
+        char target_val = words_array[offset + target];
+
+        new_words_array[offset + control] = new_control_table[control_val][target_val];
+        new_words_array[offset + target] = new_target_table[control_val][target_val];
+        lambdas[idx] = lambda_table[control_val][target_val];
     }
-
-    char control_val = words_array[offset + control];
-    char target_val = words_array[offset + target];
-
-    new_words_array[offset + control] = new_control_table[control_val][target_val];
-    new_words_array[offset + target] = new_target_table[control_val][target_val];
-    lambdas[idx] = lambda_table[control_val][target_val];
-}
 ''', 'map_cx_kernel')
 
 # Hàm wrapper để gọi kernel
@@ -266,16 +268,8 @@ def cuda_map_cx(words_array, control, target):
 
     return lambdas, new_words_array
 
-def flatten_ragged_matrix_cupy(ragged_matrix):
-    lengths = cp.array([len(row) for row in ragged_matrix], dtype=cp.int8)
-    starts = cp.concatenate((cp.array([0]), cp.cumsum(lengths)), dtype=cp.int8)
-    flatten_vector = cp.concatenate(ragged_matrix, dtype=cp.int8)
-    return flatten_vector, starts[:-1]
 
-def unflatten_ragged_matrix_cupy(flatten_vector, starts):
-    return cp.vsplit(flatten_vector, starts[1:].tolist())
-
-def map_cx(ragged_lambdas, ragged_tensor, control, target):
+def map_cx(lambdass, indicess, control, target):
     """
     --- First, I encode the n-qubit Pauli word as list of n int8 array
     Ex: XYI --> [1, 2, 0]
@@ -305,29 +299,96 @@ def map_cx(ragged_lambdas, ragged_tensor, control, target):
         [1, 3, 1]], dtype=int8)]
 
     """
-    flatten_vector, starts = flatten_ragged_matrix_cupy(ragged_tensor)
+
+    def flatten_ragged_matrix_cupy(ragged_matrix):
+        lengths = cp.array([len(row) for row in ragged_matrix], dtype=cp.int8)
+        starts = cp.concatenate((cp.array([0]), cp.cumsum(lengths)), dtype=cp.int8)
+        flatten_vector = cp.concatenate(ragged_matrix, dtype=cp.int8)
+        return flatten_vector, starts[:-1]
+
+    flatten_vector, starts = flatten_ragged_matrix_cupy(indicess)
     lambdas_sign, mapped_flatten_vector = cuda_map_cx(flatten_vector, control, target)
     starts = starts[1:].tolist()
 	# Convert flatten vector to ragged tensor
-    ragged_tensor = cp.vsplit(mapped_flatten_vector, starts)
+    indicess = cp.vsplit(mapped_flatten_vector, starts)
     lambdas_sign = cp.split(lambdas_sign, starts)
 	# OP: lambdas_sign * ragged_lambdas
     # This operator can be implemented in CUDA kernel (in file notebook)
     # But I see there is no different between two methods
-    return [cp.multiply(m1, m2) for m1, m2 in zip(ragged_lambdas, lambdas_sign)], ragged_tensor
+    return [cp.multiply(m1, m2) for m1, m2 in zip(lambdass, lambdas_sign)], indicess
 
 
 
+# # -------------------------------------------- #
+# # ----- map_indices_to_indicess section ------ #
+# # -------------------------------------------- #
+
+index_to_indices_kernel = cp.RawKernel(r'''
+extern "C" __global__
+    void index_to_indices(const long long* indices, int num_qubits, int* result, int size) {
+        int tid = blockDim.x * blockIdx.x + threadIdx.x;
+        if (tid < size) {
+            long long index = indices[tid];
+            for (int q = 0; q < num_qubits; q++) {
+                long long divisor = 1LL << (2 * (num_qubits - 1 - q));
+                int digit = (index / divisor) % 4;
+                result[tid * num_qubits + q] = digit;
+            }
+        }
+    }
+''', 'index_to_indices')
+
+def cuda_indices_to_indicess(indices, num_qubits):
+    size = indices.size
+    result = cp.empty((size, num_qubits), dtype=cp.int32)
+    threads_per_block = 256
+    blocks_per_grid = (size + threads_per_block - 1) // threads_per_block
+    index_to_indices_kernel((blocks_per_grid,), (threads_per_block,), 
+                           (indices, num_qubits, result, size))
+    
+    return result
 
 
+def map_indices_to_indicess(indicess):
+    """
+    --- First, I encode the n-qubit Pauli word (index) as list of n int8 array
+    Ex: 0(III) --> [0, 0, 0]
+    For n-stabilizer, we have n x k indices, so the encoded tensor will be n x k x n (ragged tensor)
+    Original tensor: [
+		array([1, 2]),
+		array([3]),
+		array([4]),
+	]
+    --- Next step, I flatten this tensor to 1D array (each element is still n-dim array)
+    Flatten vector: [1,2,3,4] and following starts (variable) = [0, 2, 3]
+    --- Map this array to the new array using map_indices_to_weighted kernel
+    Mapped flatten vector: [
+        [0, 0, 1],
+        [0, 0, 2],
+        [0, 0, 3],
+        [0, 1, 0],
+    ] (n x k x n)
+    
+    --- Finally, I unflatten the mapped array to the original shape (ragged tensor)
+    --- Obviously, this function requires starts variable (the start index of each row in the flatten vector)
+    
+    Output ragged tensor (with starts = [0, 2, 3]): [
+        array([[0, 0, 1], [0, 0, 2]]),
+		array([[0, 0, 3]]),
+		array([[0, 1, 0]]),
+    ]
 
-
-
-
-
-
-
-
+    """
+    def flatten_ragged_matrix_cupy(ragged_matrix):
+        lengths = cp.array([len(row) for row in ragged_matrix])
+        starts = cp.concatenate((cp.array([0]), cp.cumsum(lengths)))
+        flatten_vector = cp.concatenate(ragged_matrix)
+        return flatten_vector, starts[:-1]
+    num_qubits = len(indicess)
+    flatten_vector, starts = flatten_ragged_matrix_cupy(indicess)
+    mapped_flatten_vector = cuda_indices_to_indicess(flatten_vector, num_qubits)
+    indicess = cp.vsplit(mapped_flatten_vector, starts[1:].tolist())
+    return indicess
 
 
 
