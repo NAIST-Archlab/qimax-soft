@@ -1,104 +1,81 @@
 
 
 from collections import deque
+from .mapper import construct_lut_noncx
 class Instructor:
+    """List of instructors
+    """
     def __init__(self, num_qubits):
         self.operators = []
         self.operator = []
-        self.operator_temp = []
-        self.xoperator = []
+        self.xoperator_begin = []
         self.xoperators = []
-        self.instructors = deque()  # Better than list for pop(0)
+        self.instructors = []
         self.num_qubits = num_qubits
         self.is_cx_first = False
         self.orders = []
-        self.LUT = None
+        self.lut = None
+
 
     def append(self, gate, index, param=0):
+        """Add an instructor to the list instructors
+
+        Args:
+            gate (_type_): _description_
+            index (_type_): _description_
+            param (int, optional): _description_. Defaults to 0.
+        """
         self.instructors.append((gate, index, param))
-
     def operatoring(self):
-        if self.instructors and self.instructors[0][0] == "cx":
+        if self.instructors[0][0] == "cx":
             self.is_cx_first = True
-        
-        involved_qubits = set()  
-        while len(self.instructors) > 0:
-            gate, index, _ = self.instructors[0]
-            is_break = False
-            
-            if gate == "cx":
-                involved_qubits.add(index[0])
-                involved_qubits.add(index[1])
-                self.xoperator.append(self.instructors.popleft()[1])  
-                if (len(involved_qubits) == self.num_qubits and 
-                    len(self.instructors) > 0 and 
-                    self.instructors[0][0] != "cx"):
-                    is_break = True
-            else:
-                if index not in involved_qubits:  
-                    self.operator.append(self.instructors.popleft())
+        else:
+            self.is_cx_first = False
+        if self.is_cx_first:
+            self.xoperator_begin.append([])
+            while(True):
+                gate, index, param = self.instructors.pop(0)
+                self.xoperator_begin[0].append((gate, index, param))
+                if len(self.instructors) == 0 or self.instructors[0][0] != "cx":
+                    break
+        self.xbarriers = [0] * self.num_qubits
+        self.barriers = [0] * self.num_qubits
+        for (gate, index, param) in self.instructors:
+            if gate == 'cx':
+                location = max(self.barriers[index[0]], self.barriers[index[1]])
+                ###### --- Append to the ragged matrix of xoperators --- #####
+                if location >= len(self.xoperators):
+                    self.xoperators.append([(gate, index, param)])
                 else:
-                    self.operator_temp.append(self.instructors.popleft())
-            
-            if is_break:
-                if len(self.operator) > 0:
-                    self.operators.append(self.operator)
-                if len(self.xoperator) > 0:
-                    print("xoperator", self.xoperator)
-                    self.xoperators.append(self.xoperator)
-                self.instructors.extendleft(self.operator_temp[::-1])
-                self.operator = []
-                self.operator_temp = []
-                self.xoperator = []
-                involved_qubits = set() 
-        
-        # Take care of the last operators
-        if len(self.operator) > 0:
-            self.operators.append(self.operator)
-        if len(self.operator_temp) > 0:
-            self.operators.append(self.operator_temp)
-        if len(self.xoperator) > 0:
-            self.xoperators.append(self.xoperator)
-        def create_zip_chain(num_operators, num_xoperators, is_cx_first):
-            """Create list 0,1,0,1,...
-            If is_cx_first is True, then 1 is first, else 0 is first
-            Args:
-                n (_type_): _description_
-                m (_type_): _description_
-                is_cx_first (bool): _description_
-
-            Returns:
-                _type_: _description_
-            """
-            result = []
-            while num_operators > 0 or num_xoperators > 0:
-                if is_cx_first:
-                    if num_xoperators > 0:
-                        result.append(1)
-                        num_xoperators -= 1
-                    if num_operators > 0:
-                        result.append(0)
-                        num_operators -= 1
-                else:   
-                    if num_operators > 0:
-                        result.append(0)
-                        num_operators -= 1
-                    if num_xoperators > 0:
-                        result.append(1)
-                        num_xoperators -= 1
-            return result
-
-
-        self.orders = create_zip_chain(len(self.operators), len(self.xoperators), self.is_cx_first)
+                    self.xoperators[location].append((gate, index, param))
+                ##############################################################
+                if self.barriers[index[0]] >= self.xbarriers[index[0]]:
+                    self.xbarriers[index[0]] += 1
+                if self.barriers[index[1]] >= self.xbarriers[index[1]]:
+                    self.xbarriers[index[1]] += 1
+            else:
+                location = self.xbarriers[index]
+                ###### --- Append to the ragged matrix of operators --- ######
+                if location >= len(self.operators):
+                    self.operators.append([[] for _ in range(self.num_qubits)])
+                self.operators[location][index].append((gate, index, param))
+                ##############################################################
+                if self.xbarriers[index] > self.barriers[index]:
+                    self.barriers[index] += 1
+  
+        if self.is_cx_first:
+            self.xoperators = self.xoperator_begin + self.xoperators
         return
-    
 
-def instructor_to_lut(ins: Instructor):
-    """First, diving instructors into k non-cx operators and k+1/k-1/k cx-operator,
-    the, utilizing the lut (size k x n x 4 x 4)"""
-    grouped_instructorss = group_instructorss_by_qubits(ins.operators, ins.num_qubits)
-    LUT = construct_lut_noncx(grouped_instructorss, ins.num_qubits)
-    return LUT
+    def instructor_to_lut(self):
+        """First, diving instructors into K non-cx operators and K+1/K-1/K cx-operator,
+        Noneed LUT for cx-operators
+        , utilizing the non-cx LUT (size K x n x 3 x 4)"""
+        # Thanks to the updated operatoring method, the operators
+        # are already grouped by qubits, no need to group them again
+        # operators (ragged tensor): K x n x ?, each element is an tuple (gate, index, param)
+        self.lut = construct_lut_noncx(self.operators, self.num_qubits)
+        returnxn
 
 def group_instructorss_by_qubits(instructors: list, num_qubits: int) -> list:
     """Group instructors by qubits
