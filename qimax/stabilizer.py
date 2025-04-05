@@ -153,7 +153,6 @@ class PauliTerm:
     """
 
     def __init__(self, words: dict[str, list[np.complex64]]):
-        print(words)
         self.words: dict[str, list[np.complex64]] = words
         self.num_qubits = len(next(iter(words)))
 

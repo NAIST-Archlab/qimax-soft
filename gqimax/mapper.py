@@ -1,7 +1,5 @@
 import cupy as cp
-from numpy import sin, cos, sqrt
-from .utils import char_to_weight
-
+import time
 def char_to_weight(character: str) -> cp.ndarray:
     if character == "i":
         return cp.array([1, 0, 0, 0], dtype=cp.float32)
@@ -63,20 +61,6 @@ def weightsss_to_lambdas(lambdass: list, weightsss: list) -> cp.ndarray:
     # Mapped (flatten) lambdass: n x k_i
     # Indices: n x k_i -- mapped from int to list --> indicess: n x k_i x n
     return mapped_lambdass, map_indices_to_indicess(non_zeros_indicess)  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -187,6 +171,32 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     return lut.reshape(K, num_qubits, 3, 4)
 
 
+def map_noncx(lambdass, indicesss, lut_k):
+	# k is the index of the U operators, from outside, ranged from 0 to K-1/K'-1
+    weightsss = []
+    for _, indicess in enumerate(indicesss):
+		# Indeciess is a k x n-dim list, example: [IXXX, YYYY] => [[0, 1, 1, 1], [2, 2, 2, 2]]
+        weightss = [] # Index is a n-dim list, example: [IXXX] => [[0, 1, 1, 1]]
+        for indices in indicess:
+            weights = []
+            for j, index in enumerate(indices): # j is the qubit index
+                encoded_pauli = index - 1 # 0 is I, 1 is X, 2 is Y, 3 is Z
+                if encoded_pauli == -1:
+                    weights.append(cp.array([1,0,0,0]))
+                else:
+                    weights.append(lut_k[j][encoded_pauli])
+            weightss.append(weights)
+        weightsss.append(cp.array(weightss))
+	# Lambdass: n x k_i, Indicesss: n x k_i x n
+    
+    start = time.time()
+    lambdass, indicesss = weightsss_to_lambdas(lambdass, weightsss)
+    print("Weight to lambda time:", time.time() - start)
+    return lambdass, indicesss
+
+
+
+
 # # --------------------------- #
 # # ----- map_cx section ------ #
 # # --------------------------- #
@@ -215,7 +225,7 @@ map_cx_kernel = cp.RawKernel(r'''
         const char new_target_table[4][4] = {
             {0, 1, 2, 3},
             {1, 0, 3, 2},
-            {1, 2, 3, 2},
+            {1, 0, 3, 2},
             {0, 1, 2, 3}
         };
         const char lambda_table[4][4] = {
@@ -245,28 +255,21 @@ map_cx_kernel = cp.RawKernel(r'''
 ''', 'map_cx_kernel')
 
 # Hàm wrapper để gọi kernel
-def cuda_map_cx(words_array, control, target):
-    """
-    Áp dụng map_cx trên mảng k word bằng CUDA kernel.
-    Args:
-        words_array: cp.ndarray shape (k, n), dtype=cp.int8
-        control: int, chỉ số control
-        target: int, chỉ số target
-    Returns:
-        lambdas: cp.ndarray shape (k,), dtype=cp.int8
-        new_words_array: cp.ndarray shape (k, n), dtype=cp.int8
-    """
-    k, n = words_array.shape
-    new_words_array = cp.empty_like(words_array, dtype=cp.int8)
+def cuda_map_cx(indices, control, target):
+    if indices.dtype != cp.int8:
+        raise TypeError("Indices must be of type int8")
+    
+    k, n = indices.shape
+    indicess = cp.empty_like(indices, dtype=cp.int8)
     lambdas = cp.empty(k, dtype=cp.int8)
 
     block_size = 256
     grid_size = (k + block_size - 1) // block_size
 
     map_cx_kernel((grid_size,), (block_size,), 
-                  (words_array, new_words_array, lambdas, k, n, control, target))
+                  (indices, indicess, lambdas, k, n, control, target))
 
-    return lambdas, new_words_array
+    return lambdas, indicess
 
 
 def map_cx(lambdass, indicess, control, target):
@@ -301,22 +304,24 @@ def map_cx(lambdass, indicess, control, target):
     """
 
     def flatten_ragged_matrix_cupy(ragged_matrix):
-        lengths = cp.array([len(row) for row in ragged_matrix], dtype=cp.int8)
-        starts = cp.concatenate((cp.array([0]), cp.cumsum(lengths)), dtype=cp.int8)
+        lengths = cp.array([len(row) for row in ragged_matrix])
+        starts = cp.concatenate((cp.array([0]), cp.cumsum(lengths)))
         flatten_vector = cp.concatenate(ragged_matrix, dtype=cp.int8)
         return flatten_vector, starts[:-1]
 
-    flatten_vector, starts = flatten_ragged_matrix_cupy(indicess)
-    lambdas_sign, mapped_flatten_vector = cuda_map_cx(flatten_vector, control, target)
+    flatten_indicess, starts = flatten_ragged_matrix_cupy(indicess)
+    flatten_lambdas_sign, mapped_flatten_indicess = cuda_map_cx(flatten_indicess, control, target)
+    # print("mapped_flatten_indicess", mapped_flatten_indicess)
+    # print("flatten_lambdas_sign", flatten_lambdas_sign)
+    
     starts = starts[1:].tolist()
 	# Convert flatten vector to ragged tensor
-    indicess = cp.vsplit(mapped_flatten_vector, starts)
-    lambdas_sign = cp.split(lambdas_sign, starts)
+    ragged_indicess = cp.vsplit(mapped_flatten_indicess, starts)
+    ragged_lambdas_sign = cp.split(flatten_lambdas_sign, starts)
 	# OP: lambdas_sign * ragged_lambdas
     # This operator can be implemented in CUDA kernel (in file notebook)
     # But I see there is no different between two methods
-    return [cp.multiply(m1, m2) for m1, m2 in zip(lambdass, lambdas_sign)], indicess
-
+    return [cp.multiply(m1, m2) for m1, m2 in zip(lambdass, ragged_lambdas_sign)], ragged_indicess
 
 
 # # -------------------------------------------- #
@@ -325,13 +330,13 @@ def map_cx(lambdass, indicess, control, target):
 
 index_to_indices_kernel = cp.RawKernel(r'''
 extern "C" __global__
-    void index_to_indices(const long long* indices, int num_qubits, int* result, int size) {
+    void index_to_indices(const long long* indices, int num_qubits, char* result, int size) {
         int tid = blockDim.x * blockIdx.x + threadIdx.x;
         if (tid < size) {
             long long index = indices[tid];
             for (int q = 0; q < num_qubits; q++) {
                 long long divisor = 1LL << (2 * (num_qubits - 1 - q));
-                int digit = (index / divisor) % 4;
+                char digit = (index / divisor) % 4;
                 result[tid * num_qubits + q] = digit;
             }
         }
@@ -340,7 +345,7 @@ extern "C" __global__
 
 def cuda_indices_to_indicess(indices, num_qubits):
     size = indices.size
-    result = cp.empty((size, num_qubits), dtype=cp.int32)
+    result = cp.empty((size, num_qubits), dtype=cp.int8)
     threads_per_block = 256
     blocks_per_grid = (size + threads_per_block - 1) // threads_per_block
     index_to_indices_kernel((blocks_per_grid,), (threads_per_block,), 
