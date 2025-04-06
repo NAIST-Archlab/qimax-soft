@@ -7,7 +7,7 @@ import time
 
 
 num_qubits = 4
-ins = sample2(num_qubits, 10)
+ins = sample2(num_qubits, 20)
 ins.operatoring()
 from gqimax.pstabilizers import PStabilizers
 stb = PStabilizers(num_qubits)

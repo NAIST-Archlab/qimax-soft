@@ -174,6 +174,7 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
 def map_noncx(lambdass, indicesss, lut_k):
 	# k is the index of the U operators, from outside, ranged from 0 to K-1/K'-1
     weightsss = []
+    start = time.time()
     for _, indicess in enumerate(indicesss):
 		# Indeciess is a k x n-dim list, example: [IXXX, YYYY] => [[0, 1, 1, 1], [2, 2, 2, 2]]
         weightss = [] # Index is a n-dim list, example: [IXXX] => [[0, 1, 1, 1]]
@@ -189,9 +190,9 @@ def map_noncx(lambdass, indicesss, lut_k):
         weightsss.append(cp.array(weightss))
 	# Lambdass: n x k_i, Indicesss: n x k_i x n
     
-    start = time.time()
-    lambdass, indicesss = weightsss_to_lambdas(lambdass, weightsss)
     print("Weight to lambda time:", time.time() - start)
+    lambdass, indicesss = weightsss_to_lambdas(lambdass, weightsss)
+
     return lambdass, indicesss
 
 
