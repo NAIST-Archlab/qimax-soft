@@ -2,6 +2,7 @@
 
 from collections import deque
 from .mapper import construct_lut_noncx
+
 class Instructor:
     """List of instructors
     """

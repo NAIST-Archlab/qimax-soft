@@ -1,5 +1,6 @@
 import cupy as cp
-import time
+
+
 def char_to_weight(character: str) -> cp.ndarray:
     if character == "i":
         return cp.array([1, 0, 0, 0], dtype=cp.float32)
@@ -14,7 +15,7 @@ def char_to_weight(character: str) -> cp.ndarray:
 # ---- map_noncx to map_cx section ---- #
 # ------------------------------------- #
 
-def weightss_to_lambda(lambdas: cp.ndarray, weightss: cp.ndarray) -> cp.ndarray:
+def weightss_to_lambdas(lambdas: cp.ndarray, weightss: cp.ndarray) -> cp.ndarray:
     """A sum of transformed word (a matrix k x n x 4) to list
     Example for a single transformed word (treated as 1 term): 
         lambda*[[1,2,3,4], [1,2,3,4]] 
@@ -41,26 +42,54 @@ def weightss_to_lambda(lambdas: cp.ndarray, weightss: cp.ndarray) -> cp.ndarray:
     new_lambdas = new_lambdas[non_zeros_indices]
     return new_lambdas, non_zeros_indices
 
-def weightsss_to_lambdas(lambdass: list, weightsss: list) -> cp.ndarray:
-    """
-    A n-qubit of weightss_to_lambdas function
-    Simply, do weightss_to_lambdas n times parallelly 
-    weightsss: n x k x n x 4
-    lambdass: n x k
-    """
+
+
+
+
+def weightsss_to_lambdass(lambdass: list, weightsss: list) -> cp.ndarray:
     n = len(weightsss)
-    mapped_lambdass = []
-    non_zeros_indicess = []
+    streams = [cp.cuda.Stream() for _ in range(n)]
+    mapped_lambdass = [None] * n
+    non_zeros_indicess = [None] * n
     for i in range(n):
-        new_lambdas, non_zeros_indices = weightss_to_lambda(
-            lambdass[i],  # k_i
-            weightsss[i], # k_i x n x 4
-        )  # Shape: (?,)
-        mapped_lambdass.append(new_lambdas)
-        non_zeros_indicess.append(non_zeros_indices)
-    # Mapped (flatten) lambdass: n x k_i
-    # Indices: n x k_i -- mapped from int to list --> indicess: n x k_i x n
-    return mapped_lambdass, map_indices_to_indicess(non_zeros_indicess)  
+        with streams[i]:
+            new_lambdas, non_zeros_indices = weightss_to_lambdas(
+                lambdass[i], weightsss[i]
+            )
+            mapped_lambdass[i] = new_lambdas
+            non_zeros_indicess[i] = non_zeros_indices
+    for stream in streams:
+        stream.synchronize()
+    
+    return mapped_lambdass, map_indices_to_indicess(non_zeros_indicess)
+
+
+
+
+
+
+
+
+# def weightsss_to_lambdass(lambdass: list, weightsss: list) -> cp.ndarray:
+#     """
+#     A n-qubit of weightss_to_lambdas function
+#     Simply, do weightss_to_lambdas n times parallelly 
+#     weightsss: n x k x n x 4
+#     lambdass: n x k
+#     """
+#     n = len(weightsss)
+#     mapped_lambdass = []
+#     non_zeros_indicess = []
+#     for i in range(n):
+#         new_lambdas, non_zeros_indices = weightss_to_lambdas(
+#             lambdass[i],  # k_i
+#             weightsss[i], # k_i x n x 4
+#         )  # Shape: (?,)
+#         mapped_lambdass.append(new_lambdas)
+#         non_zeros_indicess.append(non_zeros_indices)
+#     # Mapped (flatten) lambdass: n x k_i
+#     # Indices: n x k_i -- mapped from int to list --> indicess: n x k_i x n
+#     return mapped_lambdass, map_indices_to_indicess(non_zeros_indicess)  
 
 
 
@@ -171,29 +200,49 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     return lut.reshape(K, num_qubits, 3, 4)
 
 
-def map_noncx(lambdass, indicesss, lut_k):
-	# k is the index of the U operators, from outside, ranged from 0 to K-1/K'-1
+def map_noncx(lambdass, indicesss, lut_at_k):
     weightsss = []
-    start = time.time()
-    for _, indicess in enumerate(indicesss):
-		# Indeciess is a k x n-dim list, example: [IXXX, YYYY] => [[0, 1, 1, 1], [2, 2, 2, 2]]
-        weightss = [] # Index is a n-dim list, example: [IXXX] => [[0, 1, 1, 1]]
-        for indices in indicess:
-            weights = []
-            for j, index in enumerate(indices): # j is the qubit index
-                encoded_pauli = index - 1 # 0 is I, 1 is X, 2 is Y, 3 is Z
-                if encoded_pauli == -1:
-                    weights.append(cp.array([1,0,0,0]))
-                else:
-                    weights.append(lut_k[j][encoded_pauli])
-            weightss.append(weights)
-        weightsss.append(cp.array(weightss))
-	# Lambdass: n x k_i, Indicesss: n x k_i x n
-    
-    print("Weight to lambda time:", time.time() - start)
-    lambdass, indicesss = weightsss_to_lambdas(lambdass, weightsss)
-
+    for arr in indicesss:
+        H, W = arr.shape
+        j_indices = cp.tile(cp.arange(W), (H, 1)) 
+        values = arr
+        out = cp.empty((H, W, 4), dtype=cp.float32)
+        mask0 = (values == 0) # Mask for I
+        out[mask0] = cp.array([1, 0, 0, 0], dtype=cp.float32)
+        mask123 = ~mask0 # Mask for X,Y,Z
+        j_valid = j_indices[mask123]
+        val_valid = values[mask123] - 1
+        out[mask123] = lut_at_k[j_valid, val_valid]
+        weightsss.append(out)
+    lambdass, indicesss = weightsss_to_lambdass(lambdass, weightsss)
     return lambdass, indicesss
+
+
+
+
+# def map_noncx(lambdass, indicesss, lut_k):
+# 	# k is the index of the U operators, from outside, ranged from 0 to K-1/K'-1
+#     weightsss = []
+#     start = time.time()
+#     for _, indicess in enumerate(indicesss):
+# 		# Indeciess is a k x n-dim list, example: [IXXX, YYYY] => [[0, 1, 1, 1], [2, 2, 2, 2]]
+#         weightss = [] # Index is a n-dim list, example: [IXXX] => [[0, 1, 1, 1]]
+#         for indices in indicess:
+#             weights = []
+#             for j, index in enumerate(indices): # j is the qubit index
+#                 encoded_pauli = index - 1 # 0 is I, 1 is X, 2 is Y, 3 is Z
+#                 if encoded_pauli == -1:
+#                     weights.append(cp.array([1,0,0,0]))
+#                 else:
+#                     weights.append(lut_k[j][encoded_pauli])
+#             weightss.append(weights)
+#         weightsss.append(cp.array(weightss))
+# 	# Lambdass: n x k_i, Indicesss: n x k_i x n
+    
+#     print("Weight to lambda time:", time.time() - start)
+#     lambdass, indicesss = weightsss_to_lambdass(lambdass, weightsss)
+
+#     return lambdass, indicesss
 
 
 

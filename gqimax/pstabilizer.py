@@ -1,8 +1,6 @@
 import cupy as cp
-import polars as pl
-from .mapper import weightss_to_lambda
 from .instructor import Instructor
-from .utils import word_to_index, char_to_index, index_to_word, create_word_zj
+from .utils import word_to_index, index_to_word, create_word_zj
 from .mapper import map_noncx, map_cx
 
 class PStabilizer:
