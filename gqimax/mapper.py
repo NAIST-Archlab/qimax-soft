@@ -109,13 +109,13 @@ void construct_lut_noncx(const float* instructors_flat, const int* offsets, cons
         int k = idx / (num_qubits * 3);
         int j = (idx / 3) % num_qubits;
         int i = idx % 3;
-        float weights[4];
+        float weights[3];
         if (i == 0) {  // X
-            weights[0] = 0.0f; weights[1] = 1.0f; weights[2] = 0.0f; weights[3] = 0.0f;
+            weights[0] = 1.0f; weights[1] = 0.0f; weights[2] = 0.0f;
         } else if (i == 1) {  // Y
-            weights[0] = 0.0f; weights[1] = 0.0f; weights[2] = 1.0f; weights[3] = 0.0f;
+            weights[0] = 0.0f; weights[1] = 1.0f; weights[2] = 0.0f;
         } else {  // Z
-            weights[0] = 0.0f; weights[1] = 0.0f; weights[2] = 0.0f; weights[3] = 1.0f;
+            weights[0] = 0.0f; weights[1] = 0.0f; weights[2] = 1.0f;
         }
         
         int start_offset = offsets[k * num_qubits + j];
@@ -206,9 +206,9 @@ def map_noncx(lambdass, indicesss, lut_at_k):
         H, W = arr.shape
         j_indices = cp.tile(cp.arange(W), (H, 1)) 
         values = arr
-        out = cp.empty((H, W, 4), dtype=cp.float32)
+        out = cp.empty((H, W, 3), dtype=cp.float32)
         mask0 = (values == 0) # Mask for I
-        out[mask0] = cp.array([1, 0, 0, 0], dtype=cp.float32)
+        out[mask0] = cp.array([0], dtype=cp.float32)
         mask123 = ~mask0 # Mask for X,Y,Z
         j_valid = j_indices[mask123]
         val_valid = values[mask123] - 1
