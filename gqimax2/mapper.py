@@ -1,4 +1,5 @@
 import cupy as cp
+from .kernel import broadcasted_multiplies_kernel, broandcast_base4_kernel, sum_distributions_kernel
 
 
 def char_to_weight(character: str) -> cp.ndarray:
@@ -12,41 +13,95 @@ def char_to_weight(character: str) -> cp.ndarray:
         return cp.array([0, 0, 0, 1], dtype=cp.float32)
 
 # ------------------------------------- #
-# ---- map_noncx to map_cx section ---- #
+# ---- map_noncx to map_cx section (weightsss_to_lambdass) ---- #
 # ------------------------------------- #
 
-def weightss_to_lambdas(lambdas: cp.ndarray, weightss: cp.ndarray) -> cp.ndarray:
-    """A sum of transformed word (a matrix k x n x 4) to list
-    Example for a single transformed word (treated as 1 term): 
-        lambda*[[1,2,3,4], [1,2,3,4]] 
-            -> lambda*[1, 2, 3, 4, 2, 4, 6, 8, 3, 6, 9, 12, 4, 8, 12, 16]
-    Example for this function (sum, 2 qubits, 3 term):
-        [[[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]], [[1,2,3,4], [1,2,3,4]]] 
-            -> [ 3.  6.  9. 12.  6. 12. 18. 24.  9. 18. 27. 36. 12. 24. 36. 48.]
-
-    Returns:
-        np.ndarray: lambdas
-    """
-    num_terms, num_qubits, _ = weightss.shape
-    new_lambdas = cp.zeros(4**num_qubits)
-    for j in range(num_terms):
-        weights = weightss[j]
-        products = weights[0]
-        for k in range(1, num_qubits):
-            products = cp.outer(products, weights[k]).ravel()
-        new_lambdas += lambdas[j] * products
-    # This lambdas is still in the form of 4^n x 1, 
-    # we need to ignore 0 values in the next steps
-    # In the worst case, there is no 0 values.
-    non_zeros_indices = cp.nonzero(new_lambdas)[0]
-    new_lambdas = new_lambdas[non_zeros_indices]
-    return new_lambdas, non_zeros_indices
-
-
-
-
+def broadcasted_multiplies(lambdas, arrayss):
+    from gqimax2.constant import BLOCK_SIZE
+    def prepare(arrayss):
+        k = len(arrayss)
+        dims = len(arrayss[0])
+        shapes = cp.array([len(arr) for arrays in arrayss for arr in arrays], dtype=cp.int32)
+        data = cp.concatenate([arr for arrays in arrayss for arr in arrays])
+        lengths = shapes.reshape(k, dims)
+        offsets = cp.cumsum(cp.concatenate([cp.array([0], dtype=cp.int32), lengths.flatten()[:-1]]))
+        sizes = cp.prod(lengths.reshape(k, dims), axis=1)
+        offsets_result = cp.cumsum(cp.concatenate([cp.array([0], dtype=cp.int32), sizes[:-1]]))
+        return shapes, data, offsets, offsets_result
+    
+    # - shapes: cp.ndarray (N * dims,) - save all k_i
+    # - data: cp.ndarray - Flattened array of all arrays in arrayss
+    # - offsets: cp.ndarray (N * dims,) - Beginning indices
+    # - offsets_result: cp.ndarray (N,) - Beginning indices of results
+    shapes, data, offsets, offsets_result = prepare(arrayss)
+    num_qubits = lambdas.size
+    dims = shapes.size // num_qubits
+    total_size = int(offsets_result[-1] + cp.prod(shapes[-dims:]))
+    result_cp = cp.zeros(total_size, dtype=cp.float32)
+    grid_size = (total_size + BLOCK_SIZE - 1) // BLOCK_SIZE
+    broadcasted_multiplies_kernel(
+        (grid_size,), (BLOCK_SIZE,),
+        (lambdas, shapes, data, offsets, offsets_result, result_cp, num_qubits, dims, total_size)
+    )
+    return result_cp, offsets_result
 
 
+def broadcasted_multiplies_base4(indicess):
+    r'''
+    Example: indicess = [[0, 2, 3], [1, 2, 3]] # (I + Y + Z)(X + Y + Z)
+    => output = [0*4+1, 0*4+2, 0*4+3, 2*4+1, 2*4+2, 2*4+3, 3*4+1, 3*4+2, 3*4+3]
+    => [1, 2, 3, 9, 10, 11, 13, 14, 15] # [IX, IY, IZ, YX, YY, YZ, ZX, ZY, ZZ]
+    '''
+    from gqimax2.constant import BLOCK_SIZE
+    def prepare_data(indicess):
+        num_qubits = len(indicess)        
+        n_dim = len(indicess[0])   
+        shapes = cp.array([len(index) for indices in indicess for index in indices], dtype=cp.int32)
+        data = cp.concatenate([index for indices in indicess for index in indices])
+        lengths = shapes.reshape(num_qubits, n_dim)
+        offsets = cp.cumsum(cp.concatenate([cp.array([0], dtype=cp.int32), lengths.flatten()[:-1]]))
+        sizes = cp.prod(lengths.reshape(num_qubits, n_dim), axis=1)
+        offsets_result = cp.cumsum(cp.concatenate([cp.array([0], dtype=cp.int32), sizes[:-1]]))
+        powers = cp.array([4 ** (n_dim - i - 1) for i in range(n_dim)], dtype=cp.int32)
+        return shapes, data, offsets, offsets_result, powers, sizes
+    # Below is from AI, I dont know what it means
+    shapes, data, offsets, offsets_result, powers, sizes = prepare_data(indicess)
+    num_qubits = len(indicess)
+    n_dim = len(indicess[0])
+    total_size = int(sizes.sum())
+    output = cp.empty(total_size, dtype=cp.int32)
+    grid_size = (total_size + BLOCK_SIZE - 1) // BLOCK_SIZE
+    broandcast_base4_kernel((grid_size,), (BLOCK_SIZE,),
+                 (shapes, data, offsets, offsets_result, powers, output, num_qubits, n_dim, total_size))
+
+    return output, offsets_result
+
+def sum_distributions(weightss, indicess):
+    r'''
+    After broadcasting k term, we have k arrays of weights and k arrays of indices, then we need to sum them up
+    Example: weightss = [1,2,3] [1,2,3] indicess = [0,2,3] [1,2,3] => new_weights = [1,1,4,6], indicess = [0,1,2,3]
+    '''
+    from gqimax2.constant import BLOCK_SIZE
+    # Flattening all data
+    flatten_indicess = cp.concatenate([cp.array(indices, dtype=cp.int32) for indices in indicess])
+    flatten_weightss = cp.concatenate([cp.array(weights, dtype=cp.float32) for weights in weightss])
+    n_elements = flatten_indicess.size
+    if n_elements != flatten_weightss.size:
+        raise ValueError(r'''
+            These sizes from weights and indicess do not match!
+            Make sure, example: weightss = [1,2,3] [1,2,3] indicess = [1,2,3] [1,2,3] is ok
+            Each weight has a corresponding position.
+        ''')
+	# Below is from AI, I dont know what it means
+    max_pos = int(cp.max(flatten_indicess))
+    output = cp.zeros(max_pos + 1, dtype=cp.float32)
+    grid_size = (n_elements + BLOCK_SIZE - 1) // BLOCK_SIZE
+    sum_distributions_kernel((grid_size,), (BLOCK_SIZE,),
+                             (flatten_indicess, flatten_weightss, output, n_elements))
+
+    non_zero_pos = cp.nonzero(output)[0]
+    non_zero_values = output[non_zero_pos]
+    return non_zero_pos, non_zero_values
 
 
 
