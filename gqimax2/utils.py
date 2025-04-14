@@ -4,15 +4,6 @@ def index_to_word(index: int, num_qubits: int) -> str:
     """Convert a index to coressponding word
     Example: index 4, 2 (qubits) -> IX
     Example: index 255, 4 (qubits) -> ZZZZ
-    Args:
-        index (int): An integer from 0 to 4**num_qubits - 1
-        num_qubits (int)
-
-    Raises:
-        ValueError: index out of bounds
-
-    Returns:
-        str: word
     """
     char_map = ['i', 'x', 'y', 'z']
     word = []
@@ -21,14 +12,10 @@ def index_to_word(index: int, num_qubits: int) -> str:
         index //= 4
     return ''.join(reversed(word))
 
-
 def index_to_indices(index: int, num_qubits: int) -> cp.ndarray:
     """Convert a index to coressponding word
     Example: index 4, 2 (qubits) -> IX --> [0, 1]
     Example: index 255, 4 (qubits) -> ZZZZ --> [3, 3, 3, 3]
-    Args:
-        index (int): An integer from 0 to 4**num_qubits - 1
-        num_qubits (int)
     """
     words = index_to_word(index, num_qubits)
     indices = []
@@ -57,25 +44,6 @@ def word_to_index(word: str) -> int:
     for char in word:
         index = index * 4 + char_to_index(char)
     return index
-
-def char_to_weight(character: str) -> cp.ndarray:
-    """X -> [0, 1, 0, 0] = 0*I + 1*X + 0*Y + 0*Z
-
-    Args:
-        character (str): _description_
-
-    Returns:
-        cp.ndarray: _description_
-    """
-    if character == "x":
-        return cp.array([0, 1, 0, 0])
-    if character == "y":
-        return cp.array([0, 0, 1, 0])
-    if character == "z":
-        return cp.array([0, 0, 0, 1])
-    if character == "i":
-        return cp.array([1, 0, 0, 0])
-
 
 def char_to_index(character: str) -> int:
     """I,X,Y,Z -> 0,1,2,3
@@ -109,11 +77,18 @@ def generate_pauli_combination(num_qubits: int) -> cp.ndarray:
         combinations.append(index_to_word(i, num_qubits	))
     return combinations
 
-# def create_word_zj(j, num_qubits):
-#     if j < 0 or j >= num_qubits:
-#         raise ValueError('j out of bounds. must from 0 to num_qubits - 1')
-#     return "i" * j + "z" + "i" * (num_qubits - j - 1)
-
+def char_to_weight(character: str) -> cp.ndarray:
+    """X -> [0, 1, 0, 0] = 0*I + 1*X + 0*Y + 0*Z
+    """
+    if character == "i":
+        return cp.array([1, 0, 0, 0], dtype=cp.float32)
+    elif character == "x":
+        return cp.array([0, 1, 0, 0], dtype=cp.float32)
+    elif character == "y":
+        return cp.array([0, 0, 1, 0], dtype=cp.float32)
+    elif character == "z":
+        return cp.array([0, 0, 0, 1], dtype=cp.float32)
+    
 def create_word_zj(j, num_qubits):
     if j < 0 or j >= num_qubits:
         raise ValueError('j out of bounds. must from 0 to num_qubits - 1')
@@ -159,3 +134,4 @@ def convert_bytes(n_bytes: Real) -> str:
             return '%4.2f %s' % (n_bytes, unit)
         n_bytes /= 1024
     return '%4.2f YiB' % (n_bytes)
+

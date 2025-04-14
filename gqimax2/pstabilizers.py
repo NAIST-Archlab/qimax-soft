@@ -18,10 +18,13 @@ class PStabilizers:
         self.lambdass = [
             cp.ones(1)
             for _ in range(num_qubits)]
-
+        def create_word_zj(num_qubits, j):
+            lst = [cp.array([0], dtype=cp.int32) for _ in range(num_qubits)]
+            lst[j] = cp.array([3], dtype = cp.int32)
+            return lst
         self.indicess = [
             # Create word Z_j
-            cp.expand_dims(create_word_zj(j, num_qubits), axis=0) 
+            [create_word_zj(num_qubits, j)]
             for j in range(num_qubits)]
         return
     def at(self, j: int | str):
