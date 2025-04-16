@@ -15,7 +15,7 @@ class Instructor:
         self.num_qubits = num_qubits
         self.is_cx_first = False
         self.lut = None
-        self.indicess = None # Support lut
+        self.indicesss = None # Support lut
 
     def append(self, gate, index, param=0):
         """Add an instructor to the list instructors
@@ -74,7 +74,7 @@ class Instructor:
         # Thanks to the updated operatoring method, the operators
         # are already grouped by qubits, no need to group them again
         # operators (ragged tensor): K x n x ?, each element is an tuple (gate, index, param)
-        self.lut, self.indicess = construct_lut_noncx(self.operators, self.num_qubits)
+        self.lut, self.indicesss = construct_lut_noncx(self.operators, self.num_qubits)
         return
 
 def group_instructorss_by_qubits(instructors: list, num_qubits: int) -> list:

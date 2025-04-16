@@ -408,7 +408,7 @@ def map_indices_to_indicess(indicess):
     """
     --- First, I encode the n-qubit Pauli word (index) as list of n int8 array
     Ex: 0(III) --> [0, 0, 0]
-    For n-stabilizer, we have n x k indices, so the encoded tensor will be n x k x n (ragged tensor)
+    For n-stabilizer, we have n x k indicess, so the encoded tensor will be n x k x n (ragged tensor)
     Original tensor: [
 		array([1, 2]),
 		array([3]),

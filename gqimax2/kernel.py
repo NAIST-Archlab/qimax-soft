@@ -239,3 +239,32 @@ extern "C" __global__
         }
     }
 ''', 'index_to_indices')
+
+broadcast_base4_kernel = cp.RawKernel(r'''
+extern "C" __global__
+void broadcast_base4(const int* flat_data,
+                              const int* offsets,
+                              const int* lengths,
+                              const int* strides,
+                              int* output,
+                              const int num_components,
+                              const int total_rows)
+{
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid >= total_rows) return;
+
+    // Compute component-wise indices from flattened cartesian index
+    int idx[10];  // max 10 components
+    int remaining = tid;
+    for (int i = 0; i < num_components; ++i) {
+        idx[i] = remaining / strides[i];
+        remaining = remaining % strides[i];
+    }
+
+    for (int i = 0; i < num_components; ++i) {
+        int offset = offsets[i];
+        int val = flat_data[offset + idx[i]];
+        output[tid * num_components + i] = val;
+    }
+}
+''', 'broadcast_base4')
