@@ -89,15 +89,15 @@ def char_to_weight(character: str) -> cp.ndarray:
     elif character == "z":
         return cp.array([0, 0, 0, 1], dtype=cp.float32)
     
-def create_word_zj(j, num_qubits):
+def create_word_zj(num_qubits, j):
     if j < 0 or j >= num_qubits:
         raise ValueError('j out of bounds. must from 0 to num_qubits - 1')
-    indices = [0] * num_qubits
-    indices[j] = 3
-    return cp.array(indices)
-
-
-
+    lst = cp.zeros(num_qubits, dtype=cp.int8)
+    lst[j] = 3
+    return lst
+def create_word_ii(num_qubits):
+	lst = [cp.array([0], dtype=cp.int8) for _ in range(num_qubits)]
+	return lst
 
 
 

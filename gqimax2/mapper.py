@@ -9,6 +9,17 @@ from .constant import BLOCK_SIZE
 # ---- map_noncx to map_cx section (weightsss_to_lambdass) ---- #
 #################################################################
 
+def weightsss_to_lambdass(lambdass, weightsss, indicesss):
+    num_qubits = len(weightsss)
+    lambdass_res = [None] * num_qubits
+    indicess_res = [None] * num_qubits
+    for i in range(num_qubits):
+        lambdass_res[i], indicess_res[i] = sum_distributions(
+            broadcasted_multiplies(lambdass[i], weightsss[i]),
+            broadcasted_base4(indicesss[i])
+        )
+    return lambdass_res, indicess_res
+
 def broadcasted_multiplies(lambdas, weightss):
     """
     Returns:
@@ -132,32 +143,6 @@ def sum_distributions(ragged_matrix, ragged_indices):
     return group_sums, unique_indices
 
 
-# def sum_distributions(weightss, indicess):
-#     r'''
-#     After broadcasting k term, we have k arrays of weights and k arrays of indices, then we need to sum them up
-#     Example: weightss = [1,2,3] [1,2,3] indicess = [0,2,3] [1,2,3] => new_weights = [1,1,4,6], indicess = [0,1,2,3]
-#     '''
-#     from gqimax2.constant import BLOCK_SIZE
-#     # Flattening all data
-#     flatten_indicess = cp.concatenate([cp.array(indices, dtype=cp.int32) for indices in indicess])
-#     flatten_weightss = cp.concatenate([cp.array(weights, dtype=cp.float32) for weights in weightss])
-#     n_elements = flatten_indicess.size
-#     if n_elements != flatten_weightss.size:
-#         raise ValueError(r'''
-#             These sizes from weights and indicess do not match!
-#             Make sure, example: weightss = [1,2,3] [1,2,3] indicess = [1,2,3] [1,2,3] is ok
-#             Each weight has a corresponding position.
-#         ''')
-# 	# Below is from AI, I dont know what it means
-#     max_pos = int(cp.max(flatten_indicess))
-#     output = cp.zeros(max_pos + 1, dtype=cp.float32)
-#     grid_size = (n_elements + BLOCK_SIZE - 1) // BLOCK_SIZE
-#     sum_distributions_kernel((grid_size,), (BLOCK_SIZE,),
-#                              (flatten_indicess, flatten_weightss, output, n_elements))
-
-#     indices = cp.nonzero(output)[0]
-#     lambdas = output[indices]
-#     return lambdas, indices
 
 
 # --------------------------- #
@@ -217,6 +202,85 @@ def construct_lut_noncx(grouped_instructorss, num_qubits: int):
     return lutsss, indicesss
 
 
+def map_noncx(lambdass, indicesss, lut_at_k, indicesss_at_k):
+    r'''
+    indicesss = 
+    
+    [
+		stb_0: [] (term 0) + [] (term-1) + ... + [] (term-k0),
+			
+   			Each term [] lambda x [CCC...C] (n char)
+		
+  		stb_1: [] (term 0) + [] (term-1) + ... + [] (term-k1),
+		
+  		...
+		
+  		stb_n-1: [] (term 0) + [] (term-1) + ... + [] (term-k0)
+	]
+    
+    '''
+    weightsss = []
+    indicesss_out = []
+    for j, indicess in enumerate(indicesss):  # stabilizer
+        r'''Dealing with stabilizer j [] (term 0) + [] (term-1) + ... + [] (term-k0),
+			# Each term [] = lambda x [CCC...C]
+			After mapping, 
+   			lambda x [CCC...C] => lambda [Ax + By + Cz] x [Ax + By + Cz] x ... x [Ax + By + Cz] (n times)
+			=> indiess = [array([x,y,z]) x n]
+        '''
+        weightss = []
+        indicess_out = []
+        for k, indices in enumerate(indicess): # term k_th
+            weights = []
+            indices_out = []  
+            for qubit, index in enumerate(indices): # qubit j_th
+                if index == 0:
+                    weights.append(cp.array([1], dtype=cp.float32))
+                    indices_out.append(cp.array([0], dtype=cp.int8))
+                else:
+                    weights.append(lut_at_k[qubit][int(index) - 1])
+                    indices_out.append(indicesss_at_k[qubit][int(index) - 1])
+            weightss.append(weights)
+            indicess_out.append(indices_out)
+        weightsss.append(weightss)
+        indicesss_out.append(indicess_out)
+    import time
+    start1 = time.time()
+    w = weightsss_to_lambdass(lambdass, weightsss, indicesss_out)
+    print('w2l ...:', time.time() - start1)
+    return w
+
+
+# def map_noncx(lambdass, indicesss, lut_at_k, indicesss_at_k):
+#     weightsss = []
+#     indicesss_out = []
+
+#     for j, indicess in enumerate(indicesss):  # stabilizer
+#         weightss = []
+#         indicess_out = []
+
+#         # Process each stabilizer (term-by-term)
+#         for k, indices in enumerate(indicess):  # term k_th
+#             # Mask for indices that are zero (no mapping needed for zero-index)
+#             non_zero_mask = indices != 0
+#             # Initialize weights and indices_out arrays
+#             weights = cp.ones_like(indices, dtype=cp.float32)
+#             indices_out = cp.zeros_like(indices, dtype=cp.int8)
+
+#             # Apply LUT lookups only for non-zero indices
+#             indices_out[non_zero_mask] = indicesss_at_k[j][k][indices[non_zero_mask] - 1]
+#             weights[non_zero_mask] = lut_at_k[j][k][indices[non_zero_mask] - 1]
+
+#             weightss.append(weights)
+#             indicess_out.append(indices_out)
+
+#         weightsss.append(weightss)
+#         indicesss_out.append(indicess_out)
+
+#     # Perform the final mapping step
+#     w = weightsss_to_lambdass(lambdass, weightsss, indicesss_out)
+
+#     return w
 
 
 

@@ -49,3 +49,15 @@ def sample2(num_qubits, num_layers):
 
     return ins
 
+def sample5(num_qubits, num_layers, num_repeats):
+    ins = Instructor(num_qubits)
+    for k in range(num_layers):
+        for i in range(num_qubits - 1):
+            ins.append('cx', [i, i + 1])
+        ins.append('cx', [num_qubits - 1, 0])
+        for _ in range(num_repeats):
+            for i in range(num_qubits):
+                ins.append('rx', i, 1)
+                ins.append('ry', i, 2)
+                ins.append('rz', i, 3)
+    return ins

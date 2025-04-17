@@ -1,8 +1,10 @@
 
 
 from collections import deque
-from .mapper import construct_lut_noncx
 
+import cupy as cp
+from .utils import create_word_zj
+from gqimax2.mapper import construct_lut_noncx, map_noncx, map_cx
 class Instructor:
     """List of instructors
     """
@@ -15,7 +17,38 @@ class Instructor:
         self.num_qubits = num_qubits
         self.is_cx_first = False
         self.lut = None
-        self.indicesss = None # Support lut
+        self.lut_indicesss = None # Support lut
+        self.lambdass = [
+            cp.array([1], dtype=cp.float32) 
+            for _ in range(num_qubits)
+        ]
+
+        self.indicesss = [
+            cp.array([create_word_zj(num_qubits,j)])
+            for j in range(num_qubits)
+        ]
+
+
+    def run(self):
+        import time
+        start1 = time.time()
+        self.operatoring()
+        print('operating ...:', time.time() - start1)
+        print("Operatoring finished!")
+        
+        for j, order in enumerate(self.orders):
+            k = j // 2
+            if order == 0:
+                start1 = time.time()
+                self.lambdass, self.indicesss = map_noncx(self.lambdass, self.indicesss, self.lut[k], self.lut_indicesss[k])
+                print('map noncx ...:', time.time() - start1)
+            else:
+                start1 = time.time()
+                for _, cnot_indices, _ in self.xoperators[k]:
+                    self.lambdass, self.indicesss = map_cx(self.lambdass, self.indicesss, cnot_indices[0], cnot_indices[1])  
+                print('map cx ...:', time.time() - start1)
+        return
+    
 
     def append(self, gate, index, param=0):
         """Add an instructor to the list instructors
@@ -64,40 +97,24 @@ class Instructor:
             self.xoperators = self.xoperator_begin + self.xoperators
         self.instructors = list(instructors) 
         self.orders = create_zip_chain(len(self.operators), len(self.xoperators), self.is_cx_first)
+        import time
+        start1 = time.time()
         self.to_lut()
+        print('to_lut ...:', time.time() - start1)
         return
 
     def to_lut(self):
-        """First, diving instructors into K non-cx operators and K+1/K-1/K cx-operator,
-        Noneed LUT for cx-operators
-        , utilizing the non-cx LUT (size K x n x 3 x 4)"""
+        r"""
+            First, diving instructors into K non-cx operators and K+1/K-1/K cx-operator,
+        
+            Noneed LUT for cx-operators, utilizing the non-cx LUT (size K x n x 3 x 4)
+        """
         # Thanks to the updated operatoring method, the operators
         # are already grouped by qubits, no need to group them again
         # operators (ragged tensor): K x n x ?, each element is an tuple (gate, index, param)
-        self.lut, self.indicesss = construct_lut_noncx(self.operators, self.num_qubits)
+        self.lut, self.lut_indicesss = construct_lut_noncx(self.operators, self.num_qubits)
         return
-
-def group_instructorss_by_qubits(instructors: list, num_qubits: int) -> list:
-    """Group instructors by qubits
-    Example: [['h', 0, 0], ['rx', 1, 0], ['h', 1, 0], ['ry', 0, 0]]
-    -> [[['h', 0, 0], ['ry', 0, 0]], [['h', 1, 0], ['rx', 1, 0]]]
-
-    Args:
-        instructors (list): list of instructors
-        num_qubits (int)
-
-    Returns:
-        list of list of n instructors: _description_
-    """
-    grouped_instructors = []
-    for sublist in instructors:
-        groups = {i: [] for i in range(num_qubits)}
-        for instructor in sublist:
-            index = instructor[1]
-            groups[index].append(instructor)
-        grouped_instructors.append([groups[i] for i in range(num_qubits)])
-    return grouped_instructors
-
+    
 def create_zip_chain(num_operators, num_xoperators, is_cx_first):
     total = num_operators + num_xoperators
     result = [0] * total
