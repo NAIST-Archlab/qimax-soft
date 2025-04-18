@@ -33,20 +33,20 @@ class Instructor:
         import time
         start1 = time.time()
         self.operatoring()
-        print('operating ...:', time.time() - start1)
-        print("Operatoring finished!")
+        # print('operating ...:', time.time() - start1)
+        # print("Operatoring finished!")
         
         for j, order in enumerate(self.orders):
             k = j // 2
             if order == 0:
                 start1 = time.time()
                 self.lambdass, self.indicesss = map_noncx(self.lambdass, self.indicesss, self.lut[k], self.lut_indicesss[k])
-                print('map noncx ...:', time.time() - start1)
+                # print('map noncx ...:', time.time() - start1)
             else:
                 start1 = time.time()
                 for _, cnot_indices, _ in self.xoperators[k]:
                     self.lambdass, self.indicesss = map_cx(self.lambdass, self.indicesss, cnot_indices[0], cnot_indices[1])  
-                print('map cx ...:', time.time() - start1)
+                # print('map cx ...:', time.time() - start1)
         return
     
 
@@ -100,7 +100,7 @@ class Instructor:
         import time
         start1 = time.time()
         self.to_lut()
-        print('to_lut ...:', time.time() - start1)
+        # print('to_lut ...:', time.time() - start1)
         return
 
     def to_lut(self):

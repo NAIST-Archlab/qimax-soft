@@ -247,7 +247,7 @@ def map_noncx(lambdass, indicesss, lut_at_k, indicesss_at_k):
     import time
     start1 = time.time()
     w = weightsss_to_lambdass(lambdass, weightsss, indicesss_out)
-    print('w2l ...:', time.time() - start1)
+    # print('w2l ...:', time.time() - start1)
     return w
 
 
