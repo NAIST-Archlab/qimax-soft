@@ -1,8 +1,8 @@
 from gqimax2.instructor import Instructor
 import pandas as pd
-num_qubitss = range(1, 2)
+num_qubitss = range(1, 16)
 num_layers = 2
-num_repeatss = [10, 100, 1000, 10000, 100000]
+num_repeatss = [10, 100, 1000, 10000, 100000, 1000000]
 
 def benchmark_qml_gqimax(num_qubits, num_layers, num_repeats):
 	import time
@@ -31,7 +31,6 @@ for num_qubits in num_qubitss:
 			time_taken = benchmark_qml_gqimax(num_qubits, num_layers, num_repeats)
 			time_takens.append(time_taken)
 		time_taken = sum(time_takens)/10
-
 		if 'results_df' not in locals():
 			results_df = pd.DataFrame(columns=['num_qubits', 'num_repeats', 'time_taken'])
 
