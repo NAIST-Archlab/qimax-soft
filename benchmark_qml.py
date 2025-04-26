@@ -26,6 +26,7 @@ benchmark_qml_gqimax(2, 2, 10000)
 
 for num_qubits in num_qubitss:
 	for num_repeats in num_repeatss:
+		print(num_qubits, num_repeats)
 		time_takens = []
 		for _ in range(10):
 			time_taken = benchmark_qml_gqimax(num_qubits, num_layers, num_repeats)
@@ -36,4 +37,4 @@ for num_qubits in num_qubitss:
 
 		# Append the current result to the DataFrame
 		results_df = pd.concat([results_df, pd.DataFrame({'num_qubits': [num_qubits], 'num_repeats': [num_repeats], 'time_taken': [time_taken]})], ignore_index=True)
-results_df.to_csv('time_num_layers2_xyzcx.csv', index=False)
+		results_df.to_csv('time_num_layers2_xyzcx.csv', index=False)
