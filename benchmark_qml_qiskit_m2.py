@@ -11,14 +11,15 @@ def benchmark_qml_qiskit(num_qubits, num_layers, num_repeats):
     start = time.time()
     qc = qiskit.QuantumCircuit(num_qubits)
     for k in range(num_layers):
+
+        for i in range(num_qubits):
+            qc.rx(1, i)
+            qc.ry(2, i)
+            qc.rz(3, i)
         for _ in range(num_repeats):
-            for i in range(num_qubits):
-                qc.rx(1, i, )
-                qc.ry(2, i)
-                qc.rz(3, i)
-        for i in range(num_qubits - 1):
-            qc.cx(i, i + 1)
-        qc.cx(num_qubits - 1, 0)
+            for i in range(num_qubits - 1):
+                qc.cx(i, i + 1)
+            qc.cx(num_qubits - 1, 0)
     simulator = Aer.get_backend('aer_simulator_statevector', device = 'GPU')
     circuit.measure_all()
     circuit = qiskit.transpile(circuit, simulator)
@@ -43,4 +44,4 @@ for num_qubits in num_qubitss:
 
 		# Append the current result to the DataFrame
 		results_df = pd.concat([results_df, pd.DataFrame({'num_qubits': [num_qubits], 'num_repeats': [num_repeats], 'time_taken': [time_taken]})], ignore_index=True)
-		results_df.to_csv('time_num_layers2_xyzcx_qiskit.csv', index=False)
+		results_df.to_csv('time_num_layers2_cxxyz_qiskit.csv', index=False)

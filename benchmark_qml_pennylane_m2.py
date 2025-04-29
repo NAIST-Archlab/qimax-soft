@@ -14,14 +14,15 @@ def benchmark_qml_pennylane(num_qubits, num_layers, num_repeats):
 	@qml.qnode(dev)
 	def circuit():
 		for k in range(num_layers):
+			
+			for i in range(num_qubits):
+				qml.RX(1, wires=i)
+				qml.RY(2, wires=i)
+				qml.RZ(3, wires=i)
 			for _ in range(num_repeats):
-				for i in range(num_qubits):
-					qml.RX(1, wires=i)
-					qml.RY(2, wires=i)
-					qml.RZ(3, wires=i)
-			for i in range(num_qubits - 1):
-				qml.CNOT(wires=[i, i + 1])
-			qml.CNOT(wires=[num_qubits - 1, 0])
+				for i in range(num_qubits - 1):
+					qml.CNOT(wires=[i, i + 1])
+				qml.CNOT(wires=[num_qubits - 1, 0])
 		return qml.state()
 
 	state = circuit()
@@ -44,4 +45,4 @@ for num_qubits in num_qubitss:
 
 		# Append the current result to the DataFrame
 		results_df = pd.concat([results_df, pd.DataFrame({'num_qubits': [num_qubits], 'num_repeats': [num_repeats], 'time_taken': [time_taken]})], ignore_index=True)
-		results_df.to_csv('time_num_layers2_xyzcx_pennylane.csv', index=False)
+		results_df.to_csv('time_num_layers2_cxxyz_pennylane.csv', index=False)
