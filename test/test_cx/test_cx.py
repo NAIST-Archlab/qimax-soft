@@ -23,7 +23,7 @@ def index_to_word(index: int, num_qubits: int) -> str:
         index //= 4
     return ''.join(reversed(word))
 
-def char_to_index(character: str) -> int:
+def pauli_to_index(character: str) -> int:
     """I,X,Y,Z -> 0,1,2,3
 
     Args:
@@ -53,7 +53,7 @@ def word_to_index(word: str) -> int:
     """
     index = 0
     for char in word:
-        index = index * 4 + char_to_index(char)
+        index = index * 4 + pauli_to_index(char)
     return index
 
 

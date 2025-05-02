@@ -1,6 +1,6 @@
 import numpy as np
 from numpy import sin, cos, sqrt
-from .utils import char_to_weight, create_zip_chain
+from .utils import pauli_to_weight, create_zip_chain
 
 class Instructor:
     """List of instructors
@@ -116,7 +116,7 @@ def mapper_noncx(character: str, instructors: list) -> np.ndarray:
     Returns:
         np.ndarray
     """
-    weights = char_to_weight(character)
+    weights = pauli_to_weight(character)
     for gate, _, param in instructors:
         I, A, B, C = weights
         if gate == "h":

@@ -37,10 +37,10 @@ def word_to_index(word: str) -> int:
     """
     index = 0
     for char in word:
-        index = index * 4 + char_to_index(char)
+        index = index * 4 + pauli_to_index(char)
     return index
 
-def char_to_weight(character: str) -> np.ndarray:
+def pauli_to_weight(character: str) -> np.ndarray:
     """X -> [0, 1, 0, 0] = 0*I + 1*X + 0*Y + 0*Z
 
     Args:
@@ -59,7 +59,7 @@ def char_to_weight(character: str) -> np.ndarray:
         return np.array([1, 0, 0, 0])
 
 
-def char_to_index(character: str) -> int:
+def pauli_to_index(character: str) -> int:
     """I,X,Y,Z -> 0,1,2,3
 
     Args:

@@ -1,7 +1,7 @@
 from numpy import sqrt, cos, sin
 import numpy as np
 
-def char_to_weight(character: str) -> np.ndarray:
+def pauli_to_weight(character: str) -> np.ndarray:
     """X -> [0, 1, 0, 0] = 0*I + 1*X + 0*Y + 0*Z
 
     Args:
@@ -29,7 +29,7 @@ def mapper_noncx(character: str, instructors: list) -> np.ndarray:
     Returns:
         np.ndarray
     """
-    weights = char_to_weight(character)
+    weights = pauli_to_weight(character)
     for gate, _, param in instructors:
         I, A, B, C = weights
         if gate == "h":

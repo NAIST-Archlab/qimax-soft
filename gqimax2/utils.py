@@ -42,10 +42,10 @@ def word_to_index(word: str) -> int:
     """
     index = 0
     for char in word:
-        index = index * 4 + char_to_index(char)
+        index = index * 4 + pauli_to_index(char)
     return index
 
-def char_to_index(character: str) -> int:
+def pauli_to_index(character: str) -> int:
     """I,X,Y,Z -> 0,1,2,3
 
     Args:
@@ -77,7 +77,7 @@ def generate_pauli_combination(num_qubits: int) -> cp.ndarray:
         combinations.append(index_to_word(i, num_qubits	))
     return combinations
 
-def char_to_weight(character: str) -> cp.ndarray:
+def pauli_to_weight(character: str) -> cp.ndarray:
     """X -> [0, 1, 0, 0] = 0*I + 1*X + 0*Y + 0*Z
     """
     if character == "i":

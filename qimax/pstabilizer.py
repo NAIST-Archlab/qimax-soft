@@ -1,7 +1,7 @@
 import numpy as np
 import polars as pl
 from .instructor import Instructor, weightss_to_lambda
-from .utils import word_to_index, char_to_index, index_to_word, create_word_zj
+from .utils import word_to_index, pauli_to_index, index_to_word, create_word_zj
 class PStabilizer:
     def __init__(self, j: int, num_qubits: int):
         """PStabilizer is a Pauli term
@@ -54,7 +54,7 @@ def map_noncx(indices: np.ndarray, lambdas: np.ndarray, LUT, k: int, num_qubits:
         weights = []
         word = index_to_word(index, num_qubits)
         for j, char in enumerate(word):
-            i_in_lut = char_to_index(char) - 1
+            i_in_lut = pauli_to_index(char) - 1
             if i_in_lut == -1:
                 weights.append([1,0,0,0])
             else: 

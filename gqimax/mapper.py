@@ -1,7 +1,7 @@
 import cupy as cp
 
 
-def char_to_weight(character: str) -> cp.ndarray:
+def pauli_to_weight(character: str) -> cp.ndarray:
     if character == "i":
         return cp.array([1, 0, 0, 0], dtype=cp.float32)
     elif character == "x":
@@ -642,7 +642,7 @@ def map_indices_to_indicess(indicess):
 #         weights = []
 #         word = index_to_word(index, num_qubits)
 #         for j, char in enumerate(word):
-#             i_in_lut = char_to_index(char) - 1
+#             i_in_lut = pauli_to_index(char) - 1
 #             if i_in_lut == -1:
 #                 weights.append([1,0,0,0])
 #             else: 
