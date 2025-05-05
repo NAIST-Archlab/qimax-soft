@@ -1,0 +1,7 @@
+qiskit==1.1.1
+cupy-cuda12x==13.4.1
+pandas
+numpy
+matplotlib
+scipy
+polars

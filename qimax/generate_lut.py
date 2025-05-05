@@ -1,4 +1,3 @@
-import pandas as pd
 from .pstabilizer import index_to_word, word_to_index
 
 
